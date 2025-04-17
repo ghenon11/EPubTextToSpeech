@@ -460,7 +460,7 @@ class epubTextToSpeech(ctk.CTk):
                 )
                 messagebox.showwarning(
                     "No Audio",
-                    "Audio File Missing, maybe currently under synthetization\nTry again later",
+                    "Audio File Missing, Run synthetization and try again later",
                 )
         except Exception as e:
             logging.error(traceback.format_exc())
