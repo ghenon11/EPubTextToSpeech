@@ -1,0 +1,11 @@
+2025-04-17 11:20:41,343::root(6388)::INFO::Application starts
+2025-04-17 11:20:41,517::root(6388)::INFO::Loading D:\Python\Epubtextspeech\Epub\Le_tour_du_monde_en_80j_Verne_Jules_bpt6k1643312.epub
+2025-04-17 11:20:42,006::root(6388)::INFO::Downloading D:\Python\Epubtextspeech\audio\Le tour du monde en quatre-vingts jours / par Jules Verne ; dessins par MM. de Neuville et L. Benett_Verne, Jules (1828-1905)_images_e0164331_cover.jpg
+2025-04-17 11:20:42,006::root(6388)::ERROR::Traceback (most recent call last):
+  File "D:\Python\Epubtextspeech\epubTextToSpeech v5.py", line 364, in read_ebook
+    with open(image_path, "wb") as f:
+         ^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'D:\\Python\\Epubtextspeech\\audio\\Le tour du monde en quatre-vingts jours / par Jules Verne ; dessins par MM. de Neuville et L. Benett_Verne, Jules (1828-1905)_images_e0164331_cover.jpg'
+
+2025-04-17 11:20:42,006::root(6388)::ERROR::Failed to read eBook: [Errno 2] No such file or directory: 'D:\\Python\\Epubtextspeech\\audio\\Le tour du monde en quatre-vingts jours / par Jules Verne ; dessins par MM. de Neuville et L. Benett_Verne, Jules (1828-1905)_images_e0164331_cover.jpg'
+2025-04-17 11:22:14,553::root(6388)::INFO::Exiting Application
