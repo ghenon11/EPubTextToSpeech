@@ -84,7 +84,7 @@ class epubTextToSpeech(ctk.CTk):
             self.controls_frame.grid(
                 row=0, column=0, padx=10, pady=10, sticky="nsew")
 
-            self.content_text = ctk.CTkTextbox(self.main_frame)
+            self.content_text = ctk.CTkTextbox(self.main_frame, wrap="word")
             self.content_text.configure(font=("Arial", self.font_size))
             self.content_text.grid(
                 row=0, rowspan=4, column=1, pady=10, padx=10, sticky="nsew"
@@ -308,7 +308,9 @@ class epubTextToSpeech(ctk.CTk):
             try:
                 self.stop_audio()
                 file_path = pathlib.Path(file_path)
-                config.configfile["CURRENT"]["EBOOK_PATH"] = file_path
+                # config.configfile["CURRENT"]["EBOOK_PATH"] = file_path
+                config.configfile["CURRENT"] = {
+                    "EBOOK_PATH": file_path, "EBOOK_PART": 1}
                 config.save_config()
                 self.read_ebook()
             except Exception as e:
@@ -709,7 +711,7 @@ class epubTextToSpeech(ctk.CTk):
             self.update_audio_time_label(elapsed, self.audio_duration)
             # Still scroll text while paused if checkbox is checked
             if self.sync_checkbox_var.get():
-                self.content_text.yview_moveto(progress - 0.01)
+                self.content_text.yview_moveto(progress - 0.05)
         else:
             if self.is_paused:
                 elapsed = self.pause_progress * self.audio_duration
@@ -718,7 +720,7 @@ class epubTextToSpeech(ctk.CTk):
                 self.update_audio_time_label(elapsed, self.audio_duration)
                 # Still scroll text while paused if checkbox is checked
                 if self.sync_checkbox_var.get():
-                    self.content_text.yview_moveto(progress - 0.01)
+                    self.content_text.yview_moveto(progress - 0.05)
             else:
                 elapsed = 0
 
