@@ -1,0 +1,56 @@
+# === Auxiliary Models ===
+ASR_path: "D:\\Python\\StyleTTS2\\Utils\\ASR\\epoch_00080.pth"
+ASR_config: "D:\\Python\\StyleTTS2\\Utils\\ASR\\config.yml"
+PLBERT_dir: "D:\\Python\\StyleTTS2\\Utils\\PLBERT\\"
+F0_path: "D:\\Python\\StyleTTS2\\Utils\\JDC\\bst.t7"
+
+# === Audio Preprocessing ===
+preprocess_params:
+  sr: 24000
+  spect_params:
+    n_fft: 2048
+    win_length: 1200
+    hop_length: 300
+
+# === Model Parameters ===
+model_params:
+  multispeaker: false
+  dim_in: 64
+  hidden_dim: 512
+  max_conv_dim: 512
+  n_layer: 3
+  n_mels: 80
+  n_token: 178
+  max_dur: 50
+  style_dim: 128
+  dropout: 0.2
+
+  decoder:
+    type: istftnet
+    gen_istft_hop_size: 5
+    gen_istft_n_fft: 20
+    resblock_kernel_sizes: [3, 7, 11]
+    resblock_dilation_sizes: [[1, 3, 5], [1, 3, 5], [1, 3, 5]]
+    upsample_rates: [10, 6]
+    upsample_kernel_sizes: [20, 12]
+    upsample_initial_channel: 512
+
+  diffusion:
+    dist:
+      mean: -3.0
+      std: 1.0
+      sigma_data: 0.20724466510253015
+      estimate_sigma_data: true
+    embedding_mask_proba: 0.1
+    transformer:
+      num_layers: 3
+      num_heads: 8
+      head_features: 64
+      multiplier: 2
+
+  slm:
+    model: microsoft/wavlm-base-plus
+    nlayers: 13
+    sr: 16000
+    hidden: 768
+    initial_channel: 64

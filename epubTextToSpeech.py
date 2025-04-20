@@ -1,5 +1,5 @@
 import simpleaudio as sa
-from pydub import AudioSegment
+from pydub import AudioSegment, effects
 import re
 import string
 import utils
@@ -17,20 +17,24 @@ import time
 import traceback
 import threading
 import logging
-
+import inspect
 
 print("Importing modules and launching application...")
 
 
-# CoquiTTS https://pypi.org/project/coqui-tts/
+# StylesTTS2 https://github.com/yl4579/StyleTTS2
+# locally C:\Users\gheno\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\styletts2
+# using french pretrained model by Scralius
+# https://huggingface.co/spaces/Scralius/StyleTTS2_French
 
 # img: https://www.freeiconspng.com/
 # tkinter colors: https://www.askpython.com/wp-content/uploads/2022/10/Tkinter-colour-list.png.webp
 
-# lock_synt = threading.Lock()
+# winget install --id=Gyan.FFmpeg.Shared -v "6.1.1" -e
+# python -m gruut install fr-fr
 
 __author__ = "Guillaume HENON"
-__version__ = "0.5"
+__version__ = "0.6"
 
 
 class epubTextToSpeech(ctk.CTk):
@@ -72,15 +76,22 @@ class epubTextToSpeech(ctk.CTk):
             self.controls_frame.grid_rowconfigure(0, weight=1)
             self.controls_frame.grid_columnconfigure(0, weight=1)
             self.controls_frame.grid_columnconfigure(1, weight=1)
-            ctk.CTkButton(
+            self.controls_frame.grid_columnconfigure(1, weight=2)
+            self.openebook_button = ctk.CTkButton(
                 self.controls_frame, text="Open eBook", command=self.open_ebook
-            ).grid(row=0, column=0, pady=10, padx=10)
+            )
+            self.openebook_button.grid(row=0, column=0, pady=10, padx=10)
             self.synt_button = ctk.CTkButton(
                 self.controls_frame,
                 text="Synthetize Audio",
                 command=self.convert_to_audio_callthread,
             )
+            self.synt_and_play_button = ctk.CTkButton(
+                self.controls_frame,
+                text="Synthetize & Play Selection",
+                command=self.synthetize_and_play_selection)
             self.synt_button.grid(row=0, column=1, padx=10, pady=10)
+            self.synt_and_play_button.grid(row=0, column=2, padx=10, pady=10)
             self.controls_frame.grid(
                 row=0, column=0, padx=10, pady=10, sticky="nsew")
 
@@ -171,7 +182,7 @@ class epubTextToSpeech(ctk.CTk):
             # self.scope_frame.grid_columnconfigure(0, weight=1)
             # self.scope_frame.grid_columnconfigure(1, weight=1)
             # ctk.CTkLabel(self.scope_frame, text="Synthetization\nScope", font=("Arial", 12, "bold")).grid(row=0, column=0, pady=10)
-            self.scope_var = tk.StringVar(value="Full")
+            self.scope_var = tk.StringVar(value=config.SYNTHETIZATION_LEVEL)
             # ctk.CTkRadioButton(self.scope_frame, text="Full", variable=self.scope_var, value="Full").grid(row=0, column=1, padx=10)
             # ctk.CTkRadioButton(self.scope_frame, text="Extract", variable=self.scope_var, value="Extract").grid(row=0, column=2, padx=10)
             # self.scope_frame.grid(row=1, column=0, padx=10, pady=10, sticky="nsew")
@@ -522,6 +533,58 @@ class epubTextToSpeech(ctk.CTk):
         text = " ".join(text.split())
         return text
 
+    def synthetize_and_play_selection(self):
+        try:
+            selected_text = self.content_text.get(
+                "sel.first", "sel.last").strip()
+            if not selected_text:
+                raise tk.TclError  # Will be caught below
+
+            logging.info(
+                f"Synthetizing selected text, truncated to 500 characters, starting with {selected_text:50}")
+
+            # Preprocess if needed
+            # processed_text = self.preprocess_text(selected_text)
+            processed_text = selected_text[:500]
+            processed_text = processed_text.strip()
+            processed_text = " ".join(processed_text.split())
+            processed_text = processed_text.replace('"', '')
+
+            # Build a temp filename
+            output_path = os.path.join(
+                config.DOWNLOAD_PATH, "selected_text.wav")
+            output_path = utils.add_timestamp_suffix(output_path)
+            # Synthesize using the already loaded StyleTTS2
+            if not hasattr(self, "styletts"):
+                from styletts2 import tts
+                self.styletts = tts.StyleTTS2(
+                    config_path=config.TTS_CONFIG_PATH,
+                    model_checkpoint_path=config.TTS_MODEL_CHECKPOINT_PATH
+                )
+
+            self.styletts.inference(
+                processed_text,
+                target_voice_path=config.TTS_TARGET_VOICE_PATH,
+                output_wav_file=output_path
+            )
+
+            # Normalize and play the audio
+            sound = AudioSegment.from_wav(output_path)
+            normalized = effects.normalize(sound)
+            output_path_normalized = utils.add_suffix(
+                output_path, "normalized")
+            normalized.export(output_path_normalized, format="wav")
+
+            self.play_audio(output_path)
+
+        except tk.TclError:
+            messagebox.showwarning(
+                "No Selection", "Please select some text in the reader first.")
+        except Exception as e:
+            logging.error(traceback.format_exc())
+            messagebox.showerror(
+                "Error", f"Failed to synthetize selection:\n{str(e)}")
+
     def convert_to_audio_callthread(self):
         try:
             if not self.synt_inprogress:
@@ -538,10 +601,28 @@ class epubTextToSpeech(ctk.CTk):
 
     def convert_to_audio_threaded(self):
         logging.info("Starting synthetization")
+        try:
+            self.synt_button.configure(
+                fg_color="Green", hover_color="LimeGreen", text="Loading synthetizer")
+            self.synt_inprogress = True
 
-        self.synt_button.configure(
-            fg_color="Green", hover_color="LimeGreen", text="Loading synthetizer")
-        self.synt_inprogress = True
+            from styletts2 import tts
+
+            # in styletts/models.py, updated torch.load(model_path, map_location='cpu',weights_only=False)
+            logging.debug(
+                f"Styletts2 imported from {inspect.getfile(tts)}")
+            logging.debug(
+                f"model {config.TTS_MODEL_CHECKPOINT_PATH}, config {config.TTS_CONFIG_PATH}")
+            # Initialize the StyleTTS2 model with the loaded configuration
+            self.styletts = tts.StyleTTS2(
+                config_path=config.TTS_CONFIG_PATH,
+                model_checkpoint_path=config.TTS_MODEL_CHECKPOINT_PATH
+            )
+
+        except Exception as e:
+            logging.error(f"Failed to load synthetizer: {str(e)}")
+            logging.error(traceback.format_exc())
+
         num = 1
         try:
             for item in self.book.get_items():
@@ -550,10 +631,8 @@ class epubTextToSpeech(ctk.CTk):
                     soup = BeautifulSoup(
                         item.get_body_content(), "html.parser")
                     text = soup.get_text().strip()
-                    # text= utils.preprocess_text(text)  #   to help tokenisation and avoid synthetizer to fail
-                    # self.text_content = text
-                    text = text.replace("=", "_")
-                    text = text.replace("»", " ")
+                    text = " ".join(text.split())
+                    text = text.replace('"', '')
                     if text:
                         if not self.convert_to_audio(
                             num, text
@@ -576,16 +655,18 @@ class epubTextToSpeech(ctk.CTk):
 
     def convert_to_audio(self, num, text):
         try:
-            logging.info("Loading synthetizer modules and models")
-            import torch
-            from TTS.api import TTS
+            # logging.info("Loading synthetizer modules and models")
+            # import torch
+            # from TTS.api import tts
+
             text_small = text.strip()
             text_small = " ".join(text_small.split())
             text_small = text_small[:50]
-            logging.info(f"Synthetizing item {num}, text: {text_small} ")
+            logging.info(
+                f"Synthetizing item {num}, text starts with: {text_small} ")
             self.synt_button.configure(text=f"Synthetizing part {num}")
             if text:
-                # tts = TTS(model_name=config.TTS_MODEL, progress_bar=False).to(torch.device("cpu"))
+
                 output_filename = f"{self.book_title}_{self.book_author}_{self.scope_var.get()}_{str(num)}"
                 output_filename = f"{utils.clean_string(output_filename)}.wav"
                 output_path = os.path.join(
@@ -595,11 +676,23 @@ class epubTextToSpeech(ctk.CTk):
                     text_to_convert = (
                         text if self.scope_var.get() == "Full" else text[:1000]
                     )
-                    tts = TTS(model_name=config.TTS_MODEL, progress_bar=False).to(
-                        torch.device("cpu")
-                    )
-                    tts.tts_to_file(text=text_to_convert,
-                                    file_path=output_path)
+                    # tts = TTS(model_name=config.TTS_MODEL, progress_bar=False).to(
+                    #     torch.device("cpu")
+                    # )
+
+                    # tts.tts_to_file(text=text_to_convert,
+                    #                 file_path=output_path)
+                    logging.debug(f"Output Wav File is {output_path}")
+                    out = self.styletts.inference(
+                        text_to_convert, target_voice_path=config.TTS_TARGET_VOICE_PATH, output_wav_file=output_path)
+                    # out = self.styletts.inference(
+                    #    "Bonjour Guillaume, Comment vas-tu ?", target_voice_path=config.TTS_TARGET_VOICE_PATH, output_wav_file="test.wav")
+                    # waveform = self.styletts.infer(text=text_to_convert)
+                    # torchaudio.save(output_path, waveform, 24000)
+                    # sound = AudioSegment.from_wav(output_path)
+                    # normalized_sound = effects.normalize(sound)
+                    # output_path = utils.add_suffix(output_path, "normalized")
+                    # normalized_sound.export(output_path, format="wav")
                     logging.info(f"Audio saved as {output_path}")
                 else:
                     logging.warning(
@@ -634,7 +727,10 @@ class epubTextToSpeech(ctk.CTk):
                 return
             latest_audio = wavfile
             sound = AudioSegment.from_wav(latest_audio)
-            sound += 20 * (self.volume_level - 1)
+            # sound = effects.normalize(sound)
+            sound = sound.set_channels(2)
+            sound = sound.set_sample_width(2)  # 16-bit PCM
+            sound = sound.set_frame_rate(44100)  # Optional, for compatibility
             self.current_audio = sound
             self.audio_duration = sound.duration_seconds
             self.stop_flag.clear()
@@ -649,6 +745,7 @@ class epubTextToSpeech(ctk.CTk):
             logging.debug(
                 f"Play start at {self.start} duration {self.audio_duration}")
         except Exception as e:
+            logging.error(traceback.format_exc())
             logging.error(f"Failed to play audio: {str(e)}")
 
     def stop_audio(self):

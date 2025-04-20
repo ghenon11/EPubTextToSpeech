@@ -162,3 +162,5 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 logs/epubTextToSpeech.log.1
+Models/config_orig.yml
+Models/epoch_2nd_00045.pth

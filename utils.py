@@ -89,6 +89,14 @@ def add_timestamp_suffix(file_name):
     return new_file_name
 
 
+def add_suffix(file_name, suffix):
+    # Split the file name and extension
+    name, ext = file_name.rsplit('.', 1)
+    # Create the new file name with the timestamp suffix
+    new_file_name = f"{name}_{suffix}.{ext}"
+    return new_file_name
+
+
 def get_main_dir():
     if getattr(sys, 'frozen', False):
         return os.path.dirname(sys.executable)

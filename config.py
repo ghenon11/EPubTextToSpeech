@@ -19,7 +19,12 @@ def initialize():
         configfile, \
         CONFIG_FILE_PATH, \
         CURRENT_EBOOK_PATH, \
-        CURRENT_EBOOK_PART
+        CURRENT_EBOOK_PART, \
+        TTS_MODEL_CHECKPOINT_PATH, \
+        TTS_CONFIG_PATH, \
+        TTS_TARGET_VOICE_PATH, \
+        SYNTHETIZATION_LEVEL
+
     INSTALL_DIR = utils.get_main_dir()
     DOWNLOAD_PATH = os.path.join(INSTALL_DIR, "audio")
     IMG_PATH = os.path.join(INSTALL_DIR, "imgs")
@@ -37,6 +42,10 @@ def initialize():
     TTS_MODEL = configfile["SETTINGS"]["TTS_MODEL"]
     CURRENT_EBOOK_PATH = configfile["CURRENT"]["EBOOK_PATH"]
     CURRENT_EBOOK_PART = int(configfile["CURRENT"]["EBOOK_PART"])
+    TTS_MODEL_CHECKPOINT_PATH = configfile["SETTINGS"]["TTS_MODEL_CHECKPOINT"]
+    TTS_CONFIG_PATH = configfile["SETTINGS"]["TTS_MODEL_CONFIG"]
+    TTS_TARGET_VOICE_PATH = configfile["SETTINGS"]["TTS_TARGET_VOICE"]
+    SYNTHETIZATION_LEVEL = configfile["SETTINGS"]["SYNTHETIZATION_LEVEL"]
 
 
 def load_config():
@@ -54,7 +63,11 @@ def load_config():
             # ERROR=40: used to log unexpected failures in the program.
             # CRITICAL=50
             "LOG_LEVEL": logging.INFO,
+            "SYNTHETIZATION_LEVEL": "full",
             "TTS_MODEL": "tts_models/fra/fairseq/vits",
+            "TTS_MODEL_CHECKPOINT_PATH": ".\Models\epoch_2nd_00045.pth",
+            "TTS_CONFIG_PATH": ".\Models\config.yml",
+            "TTS_TARGET_VOICE": ".\Models\reference_audio.wav"
         }
         configfile["CURRENT"] = {"EBOOK_PATH": "", "EBOOK_PART": 1}
 
