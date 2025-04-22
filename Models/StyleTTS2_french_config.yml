@@ -1,8 +1,8 @@
 # === Auxiliary Models ===
-ASR_path: "D:\\Python\\StyleTTS2\\Utils\\ASR\\epoch_00080.pth"
-ASR_config: "D:\\Python\\StyleTTS2\\Utils\\ASR\\config.yml"
-PLBERT_dir: "D:\\Python\\StyleTTS2\\Utils\\PLBERT\\"
-F0_path: "D:\\Python\\StyleTTS2\\Utils\\JDC\\bst.t7"
+ASR_path: "D:\\Python\\Epubtextspeech\\StyleTTS2\\Utils\\ASR\\epoch_00080.pth"
+ASR_config: "D:\\Python\\Epubtextspeech\\StyleTTS2\\Utils\\ASR\\config.yml"
+PLBERT_dir: "D:\\Python\\Epubtextspeech\\StyleTTS2\\Utils\\PLBERT\\"
+F0_path: "D:\\Python\\Epubtextspeech\\StyleTTS2\\Utils\\JDC\\bst.t7"
 
 # === Audio Preprocessing ===
 preprocess_params:

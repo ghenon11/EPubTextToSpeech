@@ -47,7 +47,8 @@ def init_logging():
         handlers=[
             RotatingFileHandler(config.LOG_FILE, maxBytes=50 *
                                 1024 * 1024, backupCount=config.LOG_BACKUP_COUNT)
-        ]
+        ],
+        encoding='utf-8'
     )
 
 

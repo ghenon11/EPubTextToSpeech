@@ -2,8 +2,7 @@ import simpleaudio as sa
 from pydub import AudioSegment, effects
 import re
 import string
-import utils
-import config
+
 import pathlib
 from bs4 import BeautifulSoup
 from ebooklib import epub
@@ -18,6 +17,10 @@ import traceback
 import threading
 import logging
 import inspect
+
+import utils
+import config
+import tts
 
 print("Importing modules and launching application...")
 
@@ -556,7 +559,7 @@ class epubTextToSpeech(ctk.CTk):
             output_path = utils.add_timestamp_suffix(output_path)
             # Synthesize using the already loaded StyleTTS2
             if not hasattr(self, "styletts"):
-                from styletts2 import tts
+
                 self.styletts = tts.StyleTTS2(
                     config_path=config.TTS_CONFIG_PATH,
                     model_checkpoint_path=config.TTS_MODEL_CHECKPOINT_PATH
