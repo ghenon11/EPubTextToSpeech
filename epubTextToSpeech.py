@@ -34,7 +34,7 @@ print("Importing modules and launching application...")
 # tkinter colors: https://www.askpython.com/wp-content/uploads/2022/10/Tkinter-colour-list.png.webp
 
 # winget install --id=Gyan.FFmpeg.Shared -v "6.1.1" -e
-# python -m gruut install fr-fr
+# C:\Users\gheno\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg.Shared_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-6.1.1-full_build-shared\bin\ffmpeg.exe
 
 __author__ = "Guillaume HENON"
 __version__ = "0.6"
@@ -544,11 +544,11 @@ class epubTextToSpeech(ctk.CTk):
                 raise tk.TclError  # Will be caught below
 
             logging.info(
-                f"Synthetizing selected text, truncated to 500 characters, starting with {selected_text:50}")
+                f"Synthetizing selected text, truncated to 400 characters, starting with {selected_text:50}")
 
             # Preprocess if needed
             # processed_text = self.preprocess_text(selected_text)
-            processed_text = selected_text[:500]
+            processed_text = selected_text[:400]
             processed_text = processed_text.strip()
             processed_text = " ".join(processed_text.split())
             processed_text = processed_text.replace('"', '')
@@ -609,19 +609,18 @@ class epubTextToSpeech(ctk.CTk):
                 fg_color="Green", hover_color="LimeGreen", text="Loading synthetizer")
             self.synt_inprogress = True
 
-            from styletts2 import tts
-
             # in styletts/models.py, updated torch.load(model_path, map_location='cpu',weights_only=False)
             logging.debug(
                 f"Styletts2 imported from {inspect.getfile(tts)}")
             logging.debug(
                 f"model {config.TTS_MODEL_CHECKPOINT_PATH}, config {config.TTS_CONFIG_PATH}")
             # Initialize the StyleTTS2 model with the loaded configuration
-            self.styletts = tts.StyleTTS2(
-                config_path=config.TTS_CONFIG_PATH,
-                model_checkpoint_path=config.TTS_MODEL_CHECKPOINT_PATH
-            )
+            if not hasattr(self, "styletts"):
 
+                self.styletts = tts.StyleTTS2(
+                    config_path=config.TTS_CONFIG_PATH,
+                    model_checkpoint_path=config.TTS_MODEL_CHECKPOINT_PATH
+                )
         except Exception as e:
             logging.error(f"Failed to load synthetizer: {str(e)}")
             logging.error(traceback.format_exc())

@@ -11,7 +11,7 @@ import random
 from cached_path import cached_path
 import torchaudio
 import torch
-# Need install phonemizer and python-espeak modules (Microsoft C++ Build Tools 2022 to build it and espeak itself needed)
+# Need install phonemizer modules and espeak https://github.com/espeak-ng/espeak-ng
 import phonemizer
 from phonemizer import phonemize
 from phonemizer.backend import EspeakBackend
@@ -24,7 +24,10 @@ import logging
 
 logger = logging.getLogger()
 
-nltk.download("punkt")
+try:
+    nltk.data.find('tokenizers/punkt')
+except LookupError:
+    nltk.download('punkt')
 
 torch.manual_seed(0)
 torch.backends.cudnn.benchmark = False
@@ -77,14 +80,62 @@ def preprocess(wave):
 
 
 def segment_text(text):
-    splitter = RecursiveCharacterTextSplitter(
-        separators=["\n\n", "\n", " ", ""],
-        chunk_size=SINGLE_INFERENCE_MAX_LEN,
-        chunk_overlap=0,
-        length_function=len,
-    )
-    segments = splitter.split_text(text)
-    return segments
+
+    # GHE update
+    # origin splitter = RecursiveCharacterTextSplitter(
+    #     separators=["\n\n", "\n", " ", ""],
+    #     chunk_size=SINGLE_INFERENCE_MAX_LEN,
+    #     chunk_overlap=0,
+    #     length_function=len,
+    # )
+    # V1 splitter = RecursiveCharacterTextSplitter(
+    #     separators=["\n\n", "\n", ".", ";", ",", " ", ""],
+    #     chunk_size=SINGLE_INFERENCE_MAX_LEN,
+    #     chunk_overlap=0,
+    #     keep_separator=True,
+    #     length_function=len,
+    # )
+    # segments = splitter.split_text(text)
+
+    def recursive_split(segment, delimiters):
+        if len(segment) <= SINGLE_INFERENCE_MAX_LEN:
+            return [segment.strip()]
+
+        if not delimiters:
+            # Brute-force chop
+            return [segment[i:i+SINGLE_INFERENCE_MAX_LEN].strip() for i in range(0, len(segment), SINGLE_INFERENCE_MAX_LEN)]
+
+        delimiter = delimiters[0]
+        parts = segment.split(delimiter)
+        result = []
+
+        buffer = ""
+        for i, part in enumerate(parts):
+            if i < len(parts) - 1:
+                part += delimiter  # add delimiter back except for the last split
+            part = part.strip()
+
+            if buffer:
+                candidate = buffer + " " + part
+            else:
+                candidate = part
+
+            if len(candidate) <= SINGLE_INFERENCE_MAX_LEN:
+                buffer = candidate
+            else:
+                if buffer:
+                    result += recursive_split(buffer, delimiters[1:])
+                    buffer = part
+                else:
+                    result += recursive_split(part, delimiters[1:])
+                    buffer = ""
+
+        if buffer:
+            result += recursive_split(buffer, delimiters[1:])
+
+        return result
+
+    return recursive_split(text, [".", ";", ","])
 
 
 class StyleTTS2:
@@ -100,9 +151,11 @@ class StyleTTS2:
         # self.phoneme_converter = PhonemeConverterFactory.load_phoneme_converter(
         #    phoneme_converter
         # )
-        EspeakBackend.command = 'espeak'
+        # EspeakBackend.command = 'espeak'
         self.phoneme_converter = EspeakBackend(
             language='fr-fr', preserve_punctuation=True, with_stress=True, words_mismatch='ignore')
+
+        logger.debug(f"Phoneme_converter is {self.phoneme_converter}")
 
         self.config = None
         self.model_params = None
@@ -261,6 +314,8 @@ class StyleTTS2:
 
         # BERT model is limited by a tensor size [1, 512] during its inference, which roughly corresponds to ~450 characters
         if len(text) > SINGLE_INFERENCE_MAX_LEN:
+            logger.info(
+                f"Text is longer than SINGLE_INFERENCE_MAX_LEN {SINGLE_INFERENCE_MAX_LEN}")
             return self.long_inference(
                 text,
                 target_voice_path=target_voice_path,
@@ -281,9 +336,15 @@ class StyleTTS2:
             ref_s = self.compute_style(
                 target_voice_path)  # target style vector
 
+        logger.info(
+            f"Synthetizing text starting with [{text[:15]}], ending with [{text[-15:]}]")
         text = text.strip()
         text = text.replace('"', "")
-        phonemized_text = self.phoneme_converter.phonemize(text)
+        # GHE update
+        # Input text to phonemize() is str but it must be list of str
+        phonemized_text = '\n'.join(
+            self.phoneme_converter.phonemize(text.splitlines()))
+        # original; phonemized_text = self.phoneme_converter.phonemize(str(text))
         ps = word_tokenize(phonemized_text)
         phoneme_string = " ".join(ps)
 
@@ -396,14 +457,21 @@ class StyleTTS2:
                 target_voice_path = cached_path(DEFAULT_TARGET_VOICE_URL)
             ref_s = self.compute_style(
                 target_voice_path)  # target style vector
-
+        logger.info("Segmenting text")
         text_segments = segment_text(text)
+        nb_segments = len(text_segments)
+        logger.info(f"Text segmented in {nb_segments} segments")
         segments = []
         prev_s = None
+        i = 1
         for text_segment in text_segments:
+            # GHE update
             # Address cut-off sentence issue due to langchain text splitter
-            if text_segment[-1] != ".":
-                text_segment += ", "
+            # if text_segment[-1] != ".":
+            #     logger.warning(
+            #         f"cut-off sentence issue due to langchain text splitter, last 10 characters: {text_segment[-10:]}")
+            #     text_segment += ", "
+            logger.info(f"Synthetizing segment {i} of {nb_segments}")
             segment_output, prev_s = self.long_inference_segment(
                 text_segment,
                 prev_s,
@@ -415,6 +483,7 @@ class StyleTTS2:
                 embedding_scale=embedding_scale,
             )
             segments.append(segment_output)
+            i += 1
         output = np.concatenate(segments)
         if output_wav_file:
             scipy.io.wavfile.write(
@@ -446,9 +515,12 @@ class StyleTTS2:
         """
         text = text.strip()
         text = text.replace('"', "")
-        # GHE update
+        # GHE updateSynthetizing
         # phonemized_text = self.phoneme_converter.phonemize(text)
-        phonemized_text = self.phoneme_converter.phonemize([text])
+        logger.info(
+            f"Synthetizing text segment starting with [{text[:15]}], ending with [{text[-15:]}]")
+        phonemized_text = '\n'.join(
+            self.phoneme_converter.phonemize(text.splitlines()))
         ps = word_tokenize(str(phonemized_text))
         phoneme_string = " ".join(ps)
         phoneme_string = phoneme_string.replace("``", '"')
