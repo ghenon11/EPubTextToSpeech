@@ -8,6 +8,6 @@ set PHONEMIZER_ESPEAK_LIBRARY=D:\Python\Epubtextspeech\eSpeak NG\libespeak-ng.dl
 rem set PHONEMIZER_ESPEAK_LIBRARY=C:\Program Files\eSpeak NG\libespeak-ng.dll
 set PYTHONPATH=D:\Python\Epubtextspeech\StyleTTS2;D:\Python\Epubtextspeech\StyleTTS2\Modules\
 echo on
-whereis ffmppeg.exe
+where ffmpeg.exe
 ffmpeg.exe -version
 python -B "epubTextToSpeech.py" 

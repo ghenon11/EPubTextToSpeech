@@ -1,3 +1,4 @@
+import re
 from StyleTTS2.Modules.diffusion.sampler import DiffusionSampler, ADPM2Sampler, KarrasSchedule
 from StyleTTS2.Utils.PLBERT.util import load_plbert
 from StyleTTS2.text_utils import TextCleaner
@@ -54,6 +55,7 @@ BERT_CONFIG_URL = "https://github.com/yl4579/StyleTTS2/raw/main/Utils/PLBERT/con
 DEFAULT_TARGET_VOICE_URL = "https://styletts2.github.io/wavs/LJSpeech/OOD/GT/00001.wav"
 
 SINGLE_INFERENCE_MAX_LEN = 420
+INFERENCE_MIN_LEN = 5
 
 to_mel = torchaudio.transforms.MelSpectrogram(
     n_mels=80, n_fft=2048, win_length=1200, hop_length=300
@@ -78,64 +80,103 @@ def preprocess(wave):
     mel_tensor = (torch.log(1e-5 + mel_tensor.unsqueeze(0)) - mean) / std
     return mel_tensor
 
+def unicode_code_points(s):
+    # the unicode_code_points function takes a string s and returns a list of Unicode code points for each character in the string. The ord function is used to get the Unicode code point of each character, and f"U+{ord(char):04X}" formats it as a hexadecimal string prefixed with "U+".
+    # Example usage
+    # input_string = "Hello, World!"      
+    # unicode_codes = unicode_code_points(input_string)
+    return [f"{char} U+{ord(char):04X}" for char in s]
 
 def segment_text(text):
+    # Step 0: Add " ." before newline if line doesn't end with punctuation
+    # text = re.sub(r'([^\.\?!;\s])?\n', lambda m: (
+    #    m.group(1) + " ." if m.group(1) else ".") + "\n", text)
+    # text = re.sub(r'([^\.\?!;])\n', r'\1 .\n', text)
+    #text = re.sub(r'(?<![.;?!])\n', ' .\n', text)
+    unicode_codes = unicode_code_points(text)
+    logging.debug(str(unicode_codes))
+    text=text.replace("\n",".\n")
+    text=text.replace("\r",".\n")
+    # Step 1: Split by newline
+    lines = text.splitlines()
 
-    # GHE update
-    # origin splitter = RecursiveCharacterTextSplitter(
-    #     separators=["\n\n", "\n", " ", ""],
-    #     chunk_size=SINGLE_INFERENCE_MAX_LEN,
-    #     chunk_overlap=0,
-    #     length_function=len,
-    # )
-    # V1 splitter = RecursiveCharacterTextSplitter(
-    #     separators=["\n\n", "\n", ".", ";", ",", " ", ""],
-    #     chunk_size=SINGLE_INFERENCE_MAX_LEN,
-    #     chunk_overlap=0,
-    #     keep_separator=True,
-    #     length_function=len,
-    # )
-    # segments = splitter.split_text(text)
+    # Step 2: Split each line by primary delimiters (keeping delimiters)
+    primary_delimiters = r'[.;?!]'
+    segments = []
+    for line in lines:
+        parts = re.split(f'({primary_delimiters})', line)
+        combined = [''.join(parts[i:i+2]).strip()
+                    for i in range(0, len(parts)-1, 2)]
+        if len(parts) % 2 != 0:
+            combined.append(parts[-1].strip())
+        segments.extend([s for s in combined if s])
 
-    def recursive_split(segment, delimiters):
+    # Step 3: Merge short segments
+    merged_segments = []
+    buffer = ""
+
+    for segment in segments:
+        if len(buffer) > 0:
+            buffer += " " + segment
+        else:
+            buffer = segment
+
+        if len(buffer) >= INFERENCE_MIN_LEN:
+            merged_segments.append(buffer.strip())
+            buffer = ""
+
+    if buffer:
+        merged_segments.append(buffer.strip())
+
+    # Step 4: Further split long segments
+    def split_long_segment(segment):
         if len(segment) <= SINGLE_INFERENCE_MAX_LEN:
             return [segment.strip()]
 
-        if not delimiters:
-            # Brute-force chop
-            return [segment[i:i+SINGLE_INFERENCE_MAX_LEN].strip() for i in range(0, len(segment), SINGLE_INFERENCE_MAX_LEN)]
+        # First split by commas (keeping commas)
+        comma_parts = re.split(r'(,)', segment)
+        combined_comma = [''.join(comma_parts[i:i+2]).strip()
+                          for i in range(0, len(comma_parts)-1, 2)]
+        if len(comma_parts) % 2 != 0:
+            combined_comma.append(comma_parts[-1].strip())
 
-        delimiter = delimiters[0]
-        parts = segment.split(delimiter)
+        final_chunks = []
+        temp = ""
+        for part in combined_comma:
+            if len(temp) + len(part) + 1 <= SINGLE_INFERENCE_MAX_LEN:
+                temp += " " + part if temp else part
+            else:
+                if temp:
+                    final_chunks.append(temp.strip())
+                temp = part
+        if temp:
+            final_chunks.append(temp.strip())
+
+        # Then split any still-too-long parts by space
         result = []
-
-        buffer = ""
-        for i, part in enumerate(parts):
-            if i < len(parts) - 1:
-                part += delimiter  # add delimiter back except for the last split
-            part = part.strip()
-
-            if buffer:
-                candidate = buffer + " " + part
+        for chunk in final_chunks:
+            if len(chunk) <= SINGLE_INFERENCE_MAX_LEN:
+                result.append(chunk)
             else:
-                candidate = part
-
-            if len(candidate) <= SINGLE_INFERENCE_MAX_LEN:
-                buffer = candidate
-            else:
-                if buffer:
-                    result += recursive_split(buffer, delimiters[1:])
-                    buffer = part
-                else:
-                    result += recursive_split(part, delimiters[1:])
-                    buffer = ""
-
-        if buffer:
-            result += recursive_split(buffer, delimiters[1:])
+                words = chunk.split()
+                temp = ""
+                for word in words:
+                    if len(temp) + len(word) + 1 <= SINGLE_INFERENCE_MAX_LEN:
+                        temp += " " + word if temp else word
+                    else:
+                        result.append(temp.strip())
+                        temp = word
+                if temp:
+                    result.append(temp.strip())
 
         return result
 
-    return recursive_split(text, [".", ";", ","])
+    # Apply long-segment splitting
+    final_segments = []
+    for segment in merged_segments:
+        final_segments.extend(split_long_segment(segment))
+
+    return final_segments
 
 
 class StyleTTS2:
@@ -152,10 +193,17 @@ class StyleTTS2:
         #    phoneme_converter
         # )
         # EspeakBackend.command = 'espeak'
+        # GHE
+        # was self.phoneme_converter = EspeakBackend(
+        #    language='fr-fr', preserve_punctuation=True, with_stress=True, words_mismatch='ignore')
         self.phoneme_converter = EspeakBackend(
-            language='fr-fr', preserve_punctuation=True, with_stress=True, words_mismatch='ignore')
-
+            language='fr-fr',
+            preserve_punctuation=True,  # was True
+            with_stress=True,
+            words_mismatch='ignore'
+        )
         logger.debug(f"Phoneme_converter is {self.phoneme_converter}")
+        logger.debug(f"device is {self.device}")
 
         self.config = None
         self.model_params = None
@@ -414,8 +462,9 @@ class StyleTTS2:
             out = self.model.decoder(asr, F0_pred, N_pred,
                                      ref.squeeze().unsqueeze(0))
 
+        # GHE trim 100 to be consistent, was 50
         output = (
-            out.squeeze().cpu().numpy()[..., :-50]
+            out.squeeze().cpu().numpy()[..., :-100]
         )  # weird pulse at the end of the model, need to be fixed later
         if output_wav_file:
             scipy.io.wavfile.write(
@@ -472,6 +521,7 @@ class StyleTTS2:
             #         f"cut-off sentence issue due to langchain text splitter, last 10 characters: {text_segment[-10:]}")
             #     text_segment += ", "
             logger.info(f"Synthetizing segment {i} of {nb_segments}")
+            
             segment_output, prev_s = self.long_inference_segment(
                 text_segment,
                 prev_s,
@@ -490,6 +540,9 @@ class StyleTTS2:
                 output_wav_file, rate=output_sample_rate, data=output)
         return output
 
+    # GHE
+    # t was 0.7, trying 0.9 no change
+    # diffusion step was 5 try 4
     def long_inference_segment(
         self,
         text,
@@ -518,9 +571,41 @@ class StyleTTS2:
         # GHE updateSynthetizing
         # phonemized_text = self.phoneme_converter.phonemize(text)
         logger.info(
-            f"Synthetizing text segment starting with [{text[:15]}], ending with [{text[-15:]}]")
-        phonemized_text = '\n'.join(
-            self.phoneme_converter.phonemize(text.splitlines()))
+            f"Synthetizing text segment starting with [{text[:50]}], ending with [{text[-50:]}]")
+        unicode_codes = unicode_code_points(text)
+        logging.debug(str(unicode_codes))
+        # GHE, updated phonemize
+        # was phonemized_text = '\n'.join(
+        #    self.phoneme_converter.phonemize(text.splitlines()))
+
+        lines = text.splitlines()
+        try:
+            phonemized_lines = self.phoneme_converter.phonemize(lines)
+        except Exception as e:
+            logger.warning(f"[Phonemizer] failed: {e}")
+            phonemized_lines = self.phoneme_converter.phonemize(
+                [' '.join(lines)])
+
+        if len(phonemized_lines) != len(lines):
+            logger.warning(
+                f"[Phonemizer] Line mismatch: {len(lines)} input vs {len(phonemized_lines)} output")
+            logger.warning(f"[Phonemizer] Input lines: {lines}")
+            logger.warning(f"[Phonemizer] Output lines: {phonemized_lines}")
+            phonemized_text = self.phoneme_converter.phonemize([' '.join(lines)])[
+                0]
+        else:
+            phonemized_text = '\n'.join(phonemized_lines)
+
+        # 🔠 Bonus Debug: Word count alignment logging
+        original_word_count = len(word_tokenize(text))
+        phoneme_word_count = len(word_tokenize(phonemized_text))
+        logger.debug(
+            f"[Phonemizer] Original words: {original_word_count}, Phonemized tokens: {phoneme_word_count}")
+
+        # ❗ Optional safety assertion — uncomment if you want hard stop on large mismatches
+        # assert abs(original_word_count - phoneme_word_count) <= original_word_count * 0.3, \
+        #     f"[Phonemizer] Token mismatch too large! ({original_word_count} vs {phoneme_word_count})"
+
         ps = word_tokenize(str(phonemized_text))
         phoneme_string = " ".join(ps)
         phoneme_string = phoneme_string.replace("``", '"')

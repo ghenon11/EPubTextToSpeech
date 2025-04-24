@@ -633,8 +633,10 @@ class epubTextToSpeech(ctk.CTk):
                     soup = BeautifulSoup(
                         item.get_body_content(), "html.parser")
                     text = soup.get_text().strip()
-                    text = " ".join(text.split())
+                    #text = " ".join(text.split())
                     text = text.replace('"', '')
+                    text = text.replace('-', ' ')
+                    text = text.replace('–', ' ')
                     if text:
                         if not self.convert_to_audio(
                             num, text
