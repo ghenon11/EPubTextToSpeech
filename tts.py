@@ -1,4 +1,6 @@
 import re
+import psutil
+
 from StyleTTS2.Modules.diffusion.sampler import DiffusionSampler, ADPM2Sampler, KarrasSchedule
 from StyleTTS2.Utils.PLBERT.util import load_plbert
 from StyleTTS2.text_utils import TextCleaner
@@ -38,6 +40,8 @@ random.seed(0)
 
 np.random.seed(0)
 
+MAX_SYNTH_MEAN = 6
+MAX_SYNTH_ATTEMPTS =5
 
 LIBRI_TTS_CHECKPOINT_URL = "https://huggingface.co/yl4579/StyleTTS2-LibriTTS/resolve/main/Models/LibriTTS/epochs_2nd_00020.pth"
 LIBRI_TTS_CONFIG_URL = "https://huggingface.co/yl4579/StyleTTS2-LibriTTS/resolve/main/Models/LibriTTS/config.yml?download=true"
@@ -88,15 +92,13 @@ def unicode_code_points(s):
     return [f"{char} U+{ord(char):04X}" for char in s]
 
 def segment_text(text):
+    #unicode_codes = unicode_code_points(text)
+    #logging.debug(str(unicode_codes))
+    
     # Step 0: Add " ." before newline if line doesn't end with punctuation
-    # text = re.sub(r'([^\.\?!;\s])?\n', lambda m: (
-    #    m.group(1) + " ." if m.group(1) else ".") + "\n", text)
-    # text = re.sub(r'([^\.\?!;])\n', r'\1 .\n', text)
-    #text = re.sub(r'(?<![.;?!])\n', ' .\n', text)
-    unicode_codes = unicode_code_points(text)
-    logging.debug(str(unicode_codes))
-    text=text.replace("\n",".\n")
-    text=text.replace("\r",".\n")
+    text = re.sub(r'([^\.\?!;\s])?\n', lambda m: (
+        m.group(1) + " ." if m.group(1) else ".") + "\n", text)
+   
     # Step 1: Split by newline
     lines = text.splitlines()
 
@@ -542,7 +544,7 @@ class StyleTTS2:
 
     # GHE
     # t was 0.7, trying 0.9 no change
-    # diffusion step was 5 try 4
+    # diffusion step was 5 try 4 no change
     def long_inference_segment(
         self,
         text,
@@ -572,8 +574,8 @@ class StyleTTS2:
         # phonemized_text = self.phoneme_converter.phonemize(text)
         logger.info(
             f"Synthetizing text segment starting with [{text[:50]}], ending with [{text[-50:]}]")
-        unicode_codes = unicode_code_points(text)
-        logging.debug(str(unicode_codes))
+        #unicode_codes = unicode_code_points(text)
+        #logging.debug(str(unicode_codes))
         # GHE, updated phonemize
         # was phonemized_text = '\n'.join(
         #    self.phoneme_converter.phonemize(text.splitlines()))
@@ -615,71 +617,84 @@ class StyleTTS2:
         tokens = textcleaner(phoneme_string)
         tokens.insert(0, 0)
         tokens = torch.LongTensor(tokens).to(self.device).unsqueeze(0)
+        
+        attempts=0
+        while attempts < MAX_SYNTH_ATTEMPTS:
+            with torch.no_grad():
+                input_lengths = torch.LongTensor(
+                    [tokens.shape[-1]]).to(self.device)
+                text_mask = length_to_mask(input_lengths).to(self.device)
 
-        with torch.no_grad():
-            input_lengths = torch.LongTensor(
-                [tokens.shape[-1]]).to(self.device)
-            text_mask = length_to_mask(input_lengths).to(self.device)
+                t_en = self.model.text_encoder(tokens, input_lengths, text_mask)
+                bert_dur = self.model.bert(
+                    tokens, attention_mask=(~text_mask).int())
+                d_en = self.model.bert_encoder(bert_dur).transpose(-1, -2)
 
-            t_en = self.model.text_encoder(tokens, input_lengths, text_mask)
-            bert_dur = self.model.bert(
-                tokens, attention_mask=(~text_mask).int())
-            d_en = self.model.bert_encoder(bert_dur).transpose(-1, -2)
+                s_pred = self.sampler(
+                    noise=torch.randn((1, 256)).unsqueeze(1).to(self.device),
+                    embedding=bert_dur,
+                    embedding_scale=embedding_scale,
+                    features=ref_s,  # reference from the same speaker as the embedding
+                    num_steps=diffusion_steps,
+                ).squeeze(1)
 
-            s_pred = self.sampler(
-                noise=torch.randn((1, 256)).unsqueeze(1).to(self.device),
-                embedding=bert_dur,
-                embedding_scale=embedding_scale,
-                features=ref_s,  # reference from the same speaker as the embedding
-                num_steps=diffusion_steps,
-            ).squeeze(1)
+                if prev_s is not None:
+                    # convex combination of previous and current style
+                    s_pred = t * prev_s + (1 - t) * s_pred
 
-            if prev_s is not None:
-                # convex combination of previous and current style
-                s_pred = t * prev_s + (1 - t) * s_pred
+                s = s_pred[:, 128:]
+                ref = s_pred[:, :128]
 
-            s = s_pred[:, 128:]
-            ref = s_pred[:, :128]
+                ref = alpha * ref + (1 - alpha) * ref_s[:, :128]
+                s = beta * s + (1 - beta) * ref_s[:, 128:]
 
-            ref = alpha * ref + (1 - alpha) * ref_s[:, :128]
-            s = beta * s + (1 - beta) * ref_s[:, 128:]
+                s_pred = torch.cat([ref, s], dim=-1)
 
-            s_pred = torch.cat([ref, s], dim=-1)
+                d = self.model.predictor.text_encoder(
+                    d_en, s, input_lengths, text_mask)
 
-            d = self.model.predictor.text_encoder(
-                d_en, s, input_lengths, text_mask)
+                x, _ = self.model.predictor.lstm(d)
+                duration = self.model.predictor.duration_proj(x)
 
-            x, _ = self.model.predictor.lstm(d)
-            duration = self.model.predictor.duration_proj(x)
+                duration = torch.sigmoid(duration).sum(axis=-1)
+                pred_dur = torch.round(duration.squeeze()).clamp(min=1)
 
-            duration = torch.sigmoid(duration).sum(axis=-1)
-            pred_dur = torch.round(duration.squeeze()).clamp(min=1)
+                pred_aln_trg = torch.zeros(input_lengths, int(pred_dur.sum().data))
+                c_frame = 0
+                for i in range(pred_aln_trg.size(0)):
+                    pred_aln_trg[i, c_frame: c_frame + int(pred_dur[i].data)] = 1
+                    c_frame += int(pred_dur[i].data)
 
-            pred_aln_trg = torch.zeros(input_lengths, int(pred_dur.sum().data))
-            c_frame = 0
-            for i in range(pred_aln_trg.size(0)):
-                pred_aln_trg[i, c_frame: c_frame + int(pred_dur[i].data)] = 1
-                c_frame += int(pred_dur[i].data)
+                # encode prosody
+                en = d.transpose(-1, -
+                                 2) @ pred_aln_trg.unsqueeze(0).to(self.device)
+                if self.model_params.decoder.type == "hifigan":
+                    asr_new = torch.zeros_like(en)
+                    asr_new[:, :, 0] = en[:, :, 0]
+                    asr_new[:, :, 1:] = en[:, :, 0:-1]
+                    en = asr_new
 
-            # encode prosody
-            en = d.transpose(-1, -
-                             2) @ pred_aln_trg.unsqueeze(0).to(self.device)
-            if self.model_params.decoder.type == "hifigan":
-                asr_new = torch.zeros_like(en)
-                asr_new[:, :, 0] = en[:, :, 0]
-                asr_new[:, :, 1:] = en[:, :, 0:-1]
-                en = asr_new
+                F0_pred, N_pred = self.model.predictor.F0Ntrain(en, s)
 
-            F0_pred, N_pred = self.model.predictor.F0Ntrain(en, s)
+                asr = t_en @ pred_aln_trg.unsqueeze(0).to(self.device)
+                if self.model_params.decoder.type == "hifigan":
+                    asr_new = torch.zeros_like(asr)
+                    asr_new[:, :, 0] = asr[:, :, 0]
+                    asr_new[:, :, 1:] = asr[:, :, 0:-1]
+                    asr = asr_new
 
-            asr = t_en @ pred_aln_trg.unsqueeze(0).to(self.device)
-            if self.model_params.decoder.type == "hifigan":
-                asr_new = torch.zeros_like(asr)
-                asr_new[:, :, 0] = asr[:, :, 0]
-                asr_new[:, :, 1:] = asr[:, :, 0:-1]
-                asr = asr_new
-
-            out = self.model.decoder(asr, F0_pred, N_pred,
-                                     ref.squeeze().unsqueeze(0))
-
+                out = self.model.decoder(asr, F0_pred, N_pred,
+                                         ref.squeeze().unsqueeze(0))
+                output=out.squeeze().cpu().numpy()[..., :-50]
+                synth_mean=np.mean(np.abs(output))*100
+                if np.isnan(synth_mean):
+                    logger.error(f"Segment failed, memory usage is {psutil.virtual_memory().percent}%")
+                    synth_mean=MAX_SYNTH_MEAN*2
+                else:
+                    logger.info(f"Segment absolute average is {synth_mean}, memory usage is {psutil.virtual_memory().percent}%")
+                 
+                if synth_mean <= MAX_SYNTH_MEAN:
+                    return output, s_pred
+                logger.warning("Segment average is to high or segment failed, retrying segment inference...")
+                attempts +=1
         return out.squeeze().cpu().numpy()[..., :-100], s_pred

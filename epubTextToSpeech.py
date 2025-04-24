@@ -812,7 +812,7 @@ class epubTextToSpeech(ctk.CTk):
             self.update_audio_time_label(elapsed, self.audio_duration)
             # Still scroll text while paused if checkbox is checked
             if self.sync_checkbox_var.get():
-                self.content_text.yview_moveto(progress - 0.05)
+                self.content_text.yview_moveto(progress - 0.08)
         else:
             if self.is_paused:
                 elapsed = self.pause_progress * self.audio_duration
