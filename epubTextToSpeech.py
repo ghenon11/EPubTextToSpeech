@@ -4,9 +4,13 @@ import re
 import string
 
 import pathlib
-from bs4 import BeautifulSoup
+
+
 from ebooklib import epub
 import ebooklib
+from bs4 import BeautifulSoup
+from PyPDF2 import PdfReader
+
 from PIL import Image
 from tkinter import messagebox, filedialog
 import tkinter as tk
@@ -77,12 +81,16 @@ class epubTextToSpeech(ctk.CTk):
 
             self.controls_frame = ctk.CTkFrame(self.main_frame)
             self.controls_frame.grid_rowconfigure(0, weight=1)
+            self.controls_frame.grid_rowconfigure(1, weight=1)
             self.controls_frame.grid_columnconfigure(0, weight=1)
             self.controls_frame.grid_columnconfigure(1, weight=1)
-            self.controls_frame.grid_columnconfigure(1, weight=2)
             self.openebook_button = ctk.CTkButton(
                 self.controls_frame, text="Open eBook", command=self.open_ebook
             )
+            self.openpdf_button = ctk.CTkButton(
+                self.controls_frame, text="Open PDF", command=self.open_pdf
+            )
+            self.openpdf_button.grid(row=0, column=1, pady=10, padx=10)
             self.openebook_button.grid(row=0, column=0, pady=10, padx=10)
             self.synt_button = ctk.CTkButton(
                 self.controls_frame,
@@ -93,8 +101,8 @@ class epubTextToSpeech(ctk.CTk):
                 self.controls_frame,
                 text="Synthetize & Play Selection",
                 command=self.synthetize_and_play_selection)
-            self.synt_button.grid(row=0, column=1, padx=10, pady=10)
-            self.synt_and_play_button.grid(row=0, column=2, padx=10, pady=10)
+            self.synt_button.grid(row=1, column=0, padx=10, pady=10)
+            self.synt_and_play_button.grid(row=1, column=1, padx=10, pady=10)
             self.controls_frame.grid(
                 row=0, column=0, padx=10, pady=10, sticky="nsew")
 
@@ -114,6 +122,7 @@ class epubTextToSpeech(ctk.CTk):
 
             self.font_controls = ctk.CTkFrame(self.text_control)
             self.font_controls.grid_rowconfigure(0, weight=1)
+            self.font_controls.grid_rowconfigure(1, weight=1)
             self.font_controls.grid_columnconfigure(0, weight=1)
             self.font_controls.grid_columnconfigure(1, weight=1)
             ctk.CTkButton(
@@ -122,6 +131,16 @@ class epubTextToSpeech(ctk.CTk):
             ctk.CTkButton(
                 self.font_controls, text="A-", width=30, command=self.decrease_font_size
             ).grid(row=0, column=1)
+            self.scroll_inc_button=ctk.CTkButton(
+                self.font_controls, text="S+", width=30, command=self.increase_scroll
+            )
+            self.scroll_inc_button.grid(row=1, column=0)
+            self.scroll_dec_button=ctk.CTkButton(
+                self.font_controls, text="S-", width=30, command=self.decrease_scroll
+            )
+            self.scroll_dec_button.grid(row=1, column=1)
+            self.scroll_dec_button.configure(state="disabled")
+            self.scroll_inc_button.configure(state="disabled")
             self.font_controls.grid(
                 row=0, column=2, sticky="nsew", pady=10, padx=10)
 
@@ -300,6 +319,7 @@ class epubTextToSpeech(ctk.CTk):
             self.volume_level = 1.0
             self.audio_duration = 1.0
             self.pause_time = 0
+            self.scroll_adjust = 0.08
             self.is_paused = False
 
             # ****** START *****
@@ -399,6 +419,52 @@ class epubTextToSpeech(ctk.CTk):
         except Exception as e:
             logging.error(traceback.format_exc())
             logging.error(f"Failed to read eBook: {str(e)}")
+
+    def open_pdf(self):
+        file_path = filedialog.askopenfilename(filetypes=[("PDF files", "*.pdf")])
+        if file_path:
+            try:
+                self.stop_audio()
+                config.configfile["CURRENT"] = {"EBOOK_PATH": file_path, "EBOOK_PART": 1}
+                config.save_config()
+                self.read_pdf(file_path)
+            except Exception as e:
+                logging.error(traceback.format_exc())
+                logging.error(f"Failed to open PDF: {str(e)}")
+
+    def read_pdf(self, file_path):
+        try:
+            logging.info(f"Loading PDF {file_path}")
+            reader = PdfReader(file_path)
+            self.book_items = []
+            self.book_title = os.path.basename(file_path)
+            self.book_author = "PDF Document"
+            self.book_title_label.configure(
+                text=f"{utils.wrap_text(self.book_title,70)}\n\n{self.book_author}"
+            )
+
+            for i, page in enumerate(reader.pages):
+                text = page.extract_text()
+                if text:
+                    self.book_items.append({"item": f"Page {i+1}", "text": text})
+           
+            image_path = os.path.join(
+                        config.IMG_PATH,
+                        "pdf.png")
+            resized_image = utils.resize_image(image_path, (250, 250))
+            self.bg_photo = ctk.CTkImage(light_image=resized_image, size=resized_image.size)
+            self.cover_label.configure(image=self.bg_photo)
+                        
+            self.currentdocitem = 1
+            self.pdf_file_path=file_path
+            self.maxdocitem = len(self.book_items)
+            self.docitemmax_label.configure(text=f"/ {self.maxdocitem}")
+            self.display_text()
+
+        except Exception as e:
+            logging.error(traceback.format_exc())
+            logging.error(f"Failed to read PDF: {str(e)}")
+
 
     def display_text(self):
         try:
@@ -627,25 +693,40 @@ class epubTextToSpeech(ctk.CTk):
 
         num = 1
         try:
-            for item in self.book.get_items():
-                if item.get_type() == ebooklib.ITEM_DOCUMENT:
-                    logging.info(f"Item: {item}")
-                    soup = BeautifulSoup(
-                        item.get_body_content(), "html.parser")
-                    text = soup.get_text().strip()
-                    #text = " ".join(text.split())
+            if not "pdf" in self.book_author.lower():
+                for item in self.book.get_items():
+                    if item.get_type() == ebooklib.ITEM_DOCUMENT:
+                        logging.info(f"Item: {item}")
+                        soup = BeautifulSoup(
+                            item.get_body_content(), "html.parser")
+                        text = soup.get_text().strip()
+                        #text = " ".join(text.split())
+                        text = text.replace('"', '')
+                        text = text.replace('-', ' ')
+                        text = text.replace('–', ' ')
+                        if text:
+                            if not self.convert_to_audio(
+                                num, text
+                            ):  # if synthetization failed with raw text, preprocess it to remove special character and retry
+                                logging.warning("Preprocessing text and try again")
+                                text = self.preprocess_text(text)
+                                self.convert_to_audio(num, text)
+                            num += 1
+                        else:
+                            logging.warning(f"part {num} is empty")
+            else:
+                reader = PdfReader(self.pdf_file_path)
+                for i, page in enumerate(reader.pages):
+                    text = page.extract_text()
                     text = text.replace('"', '')
                     text = text.replace('-', ' ')
                     text = text.replace('–', ' ')
                     if text:
-                        if not self.convert_to_audio(
-                            num, text
-                        ):  # if synthetization failed with raw text, preprocess it to remove special character and retry
-                            logging.warning("Preprocessing text and try again")
-                            text = self.preprocess_text(text)
-                            self.convert_to_audio(num, text)
+                        self.convert_to_audio(num, text)
                         num += 1
-
+                    else:
+                        logging.warning(f"part {num} is empty")
+                                  
             self.synt_inprogress = False
             self.synt_button.configure(
                 fg_color="#3a7ebf",
@@ -719,7 +800,13 @@ class epubTextToSpeech(ctk.CTk):
     def decrease_font_size(self):
         self.font_size = max(6, self.font_size - 1)
         self.content_text.configure(font=("Arial", self.font_size))
+    
+    def increase_scroll(self):
+        self.scroll_adjust += 0.01
 
+    def decrease_scroll(self):
+        self.scroll_adjust -= 0.01
+        
     def play_audio(self, wavfile):
         try:
             if self.audio_play_obj and self.audio_play_obj.is_playing():
@@ -812,7 +899,7 @@ class epubTextToSpeech(ctk.CTk):
             self.update_audio_time_label(elapsed, self.audio_duration)
             # Still scroll text while paused if checkbox is checked
             if self.sync_checkbox_var.get():
-                self.content_text.yview_moveto(progress - 0.08)
+                self.content_text.yview_moveto(progress - self.scroll_adjust)
         else:
             if self.is_paused:
                 elapsed = self.pause_progress * self.audio_duration
@@ -830,8 +917,12 @@ class epubTextToSpeech(ctk.CTk):
     def toggle_sync_button(self):
         if self.sync_checkbox_var.get():
             self.sync_audio_button.configure(state="disabled")
+            self.scroll_dec_button.configure(state="normal")
+            self.scroll_inc_button.configure(state="normal")
         else:
             self.sync_audio_button.configure(state="normal")
+            self.scroll_dec_button.configure(state="disabled")
+            self.scroll_inc_button.configure(state="disabled")
 
     def set_volume(self, val):
         self.volume_level = float(val)
