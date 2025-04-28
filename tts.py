@@ -8,15 +8,15 @@ from StyleTTS2.text_utils import TextCleaner
 from StyleTTS2 import utils
 from StyleTTS2 import models
 import yaml
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+# from langchain.text_splitter import RecursiveCharacterTextSplitter
 import numpy as np
 import random
 from cached_path import cached_path
 import torchaudio
 import torch
 # Need install phonemizer modules and espeak https://github.com/espeak-ng/espeak-ng
-import phonemizer
-from phonemizer import phonemize
+# import phonemizer
+# from phonemizer import phonemize
 from phonemizer.backend import EspeakBackend
 import scipy
 import librosa
@@ -41,7 +41,7 @@ random.seed(0)
 np.random.seed(0)
 
 MAX_SYNTH_MEAN = 6
-MAX_SYNTH_ATTEMPTS =5
+MAX_SYNTH_ATTEMPTS = 5
 
 LIBRI_TTS_CHECKPOINT_URL = "https://huggingface.co/yl4579/StyleTTS2-LibriTTS/resolve/main/Models/LibriTTS/epochs_2nd_00020.pth"
 LIBRI_TTS_CONFIG_URL = "https://huggingface.co/yl4579/StyleTTS2-LibriTTS/resolve/main/Models/LibriTTS/config.yml?download=true"
@@ -84,21 +84,23 @@ def preprocess(wave):
     mel_tensor = (torch.log(1e-5 + mel_tensor.unsqueeze(0)) - mean) / std
     return mel_tensor
 
+
 def unicode_code_points(s):
     # the unicode_code_points function takes a string s and returns a list of Unicode code points for each character in the string. The ord function is used to get the Unicode code point of each character, and f"U+{ord(char):04X}" formats it as a hexadecimal string prefixed with "U+".
     # Example usage
-    # input_string = "Hello, World!"      
+    # input_string = "Hello, World!"
     # unicode_codes = unicode_code_points(input_string)
     return [f"{char} U+{ord(char):04X}" for char in s]
 
+
 def segment_text(text):
-    #unicode_codes = unicode_code_points(text)
-    #logging.debug(str(unicode_codes))
-    
+    # unicode_codes = unicode_code_points(text)
+    # logging.debug(str(unicode_codes))
+
     # Step 0: Add " ." before newline if line doesn't end with punctuation
     text = re.sub(r'([^\.\?!;\s])?\n', lambda m: (
         m.group(1) + " ." if m.group(1) else ".") + "\n", text)
-   
+
     # Step 1: Split by newline
     lines = text.splitlines()
 
@@ -301,7 +303,10 @@ class StyleTTS2:
                 logger.debug("key %s loaded" % key)
                 try:
                     model[key].load_state_dict(params[key])
-                except:
+                except Exception as e:
+                    logging.debug(
+                        f"Exception {str(e)} when loading state dict"
+                    )
                     from collections import OrderedDict
 
                     state_dict = params[key]
@@ -523,7 +528,7 @@ class StyleTTS2:
             #         f"cut-off sentence issue due to langchain text splitter, last 10 characters: {text_segment[-10:]}")
             #     text_segment += ", "
             logger.info(f"Synthetizing segment {i} of {nb_segments}")
-            
+
             segment_output, prev_s = self.long_inference_segment(
                 text_segment,
                 prev_s,
@@ -574,8 +579,8 @@ class StyleTTS2:
         # phonemized_text = self.phoneme_converter.phonemize(text)
         logger.info(
             f"Synthetizing text segment starting with [{text[:50]}], ending with [{text[-50:]}]")
-        #unicode_codes = unicode_code_points(text)
-        #logging.debug(str(unicode_codes))
+        # unicode_codes = unicode_code_points(text)
+        # logging.debug(str(unicode_codes))
         # GHE, updated phonemize
         # was phonemized_text = '\n'.join(
         #    self.phoneme_converter.phonemize(text.splitlines()))
@@ -617,15 +622,16 @@ class StyleTTS2:
         tokens = textcleaner(phoneme_string)
         tokens.insert(0, 0)
         tokens = torch.LongTensor(tokens).to(self.device).unsqueeze(0)
-        
-        attempts=0
+
+        attempts = 0
         while attempts < MAX_SYNTH_ATTEMPTS:
             with torch.no_grad():
                 input_lengths = torch.LongTensor(
                     [tokens.shape[-1]]).to(self.device)
                 text_mask = length_to_mask(input_lengths).to(self.device)
 
-                t_en = self.model.text_encoder(tokens, input_lengths, text_mask)
+                t_en = self.model.text_encoder(
+                    tokens, input_lengths, text_mask)
                 bert_dur = self.model.bert(
                     tokens, attention_mask=(~text_mask).int())
                 d_en = self.model.bert_encoder(bert_dur).transpose(-1, -2)
@@ -659,10 +665,12 @@ class StyleTTS2:
                 duration = torch.sigmoid(duration).sum(axis=-1)
                 pred_dur = torch.round(duration.squeeze()).clamp(min=1)
 
-                pred_aln_trg = torch.zeros(input_lengths, int(pred_dur.sum().data))
+                pred_aln_trg = torch.zeros(
+                    input_lengths, int(pred_dur.sum().data))
                 c_frame = 0
                 for i in range(pred_aln_trg.size(0)):
-                    pred_aln_trg[i, c_frame: c_frame + int(pred_dur[i].data)] = 1
+                    pred_aln_trg[i, c_frame: c_frame +
+                                 int(pred_dur[i].data)] = 1
                     c_frame += int(pred_dur[i].data)
 
                 # encode prosody
@@ -685,24 +693,27 @@ class StyleTTS2:
 
                 out = self.model.decoder(asr, F0_pred, N_pred,
                                          ref.squeeze().unsqueeze(0))
-                output=out.squeeze().cpu().numpy()[..., :-50]
+                output = out.squeeze().cpu().numpy()[..., :-50]
                 output = out.squeeze().cpu().numpy()[..., :-50]
                 try:
                     with np.errstate(over='raise', invalid='raise'):
                         synth_mean = np.mean(np.abs(output)) * 100
                 except FloatingPointError:
-                    logger.error("Overflow or invalid value detected during synth_mean calculation.")
+                    logger.error(
+                        "Overflow or invalid value detected during synth_mean calculation.")
                     synth_mean = MAX_SYNTH_MEAN * 2  # to force retry
 
                 if np.isnan(synth_mean):
-                    logger.error(f"Segment produced NaN, memory usage is {psutil.virtual_memory().percent}%")
-                    synth_mean = MAX_SYNTH_MEAN * 2 # to force retry
+                    logger.error(
+                        f"Segment produced NaN, memory usage is {psutil.virtual_memory().percent}%")
+                    synth_mean = MAX_SYNTH_MEAN * 2  # to force retry
                 else:
-                    logger.info(f"Segment absolute average is {synth_mean}, memory usage is {psutil.virtual_memory().percent}%")
+                    logger.info(
+                        f"Segment absolute average is {synth_mean}, memory usage is {psutil.virtual_memory().percent}%")
 
-                 
                 if synth_mean <= MAX_SYNTH_MEAN:
                     return output, s_pred
-                logger.warning("Segment average is to high or segment failed, retrying segment inference...")
-                attempts +=1
+                logger.warning(
+                    "Segment average is to high or segment failed, retrying segment inference...")
+                attempts += 1
         return out.squeeze().cpu().numpy()[..., :-100], s_pred

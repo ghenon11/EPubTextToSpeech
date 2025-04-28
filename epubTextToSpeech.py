@@ -1,16 +1,14 @@
+
+import warnings
 import simpleaudio as sa
 from pydub import AudioSegment, effects
 import re
 import string
-
 import pathlib
-
-
 from ebooklib import epub
 import ebooklib
 from bs4 import BeautifulSoup
 from PyPDF2 import PdfReader
-
 from PIL import Image
 from tkinter import messagebox, filedialog
 import tkinter as tk
@@ -21,13 +19,14 @@ import traceback
 import threading
 import logging
 import inspect
-
 import utils
 import config
 import tts
-
+import sys
+sys.setrecursionlimit(5000)
 print("Importing modules and launching application...")
 
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 # StylesTTS2 https://github.com/yl4579/StyleTTS2
 # locally C:\Users\gheno\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\styletts2
@@ -41,7 +40,7 @@ print("Importing modules and launching application...")
 # C:\Users\gheno\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg.Shared_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-6.1.1-full_build-shared\bin\ffmpeg.exe
 
 __author__ = "Guillaume HENON"
-__version__ = "0.6"
+__version__ = "0.7"
 
 
 class epubTextToSpeech(ctk.CTk):
@@ -125,20 +124,29 @@ class epubTextToSpeech(ctk.CTk):
             self.font_controls.grid_rowconfigure(1, weight=1)
             self.font_controls.grid_columnconfigure(0, weight=1)
             self.font_controls.grid_columnconfigure(1, weight=1)
+            self.font_controls.grid_columnconfigure(2, weight=1)
             ctk.CTkButton(
                 self.font_controls, text="A+", width=30, command=self.increase_font_size
             ).grid(row=0, column=0)
+            self.font_label = ctk.CTkLabel(
+                self.font_controls, text="12"
+            )
+            self.font_label.grid(row=0, column=1)
             ctk.CTkButton(
                 self.font_controls, text="A-", width=30, command=self.decrease_font_size
-            ).grid(row=0, column=1)
-            self.scroll_inc_button=ctk.CTkButton(
+            ).grid(row=0, column=2)
+            self.scroll_inc_button = ctk.CTkButton(
                 self.font_controls, text="S+", width=30, command=self.increase_scroll
             )
             self.scroll_inc_button.grid(row=1, column=0)
-            self.scroll_dec_button=ctk.CTkButton(
+            self.scroll_label = ctk.CTkLabel(
+                self.font_controls, text="8"
+            )
+            self.scroll_label.grid(row=1, column=1)
+            self.scroll_dec_button = ctk.CTkButton(
                 self.font_controls, text="S-", width=30, command=self.decrease_scroll
             )
-            self.scroll_dec_button.grid(row=1, column=1)
+            self.scroll_dec_button.grid(row=1, column=2)
             self.scroll_dec_button.configure(state="disabled")
             self.scroll_inc_button.configure(state="disabled")
             self.font_controls.grid(
@@ -170,7 +178,18 @@ class epubTextToSpeech(ctk.CTk):
                 command=self.toggle_sync_button,
             )
             self.sync_checkbox.grid(
-                row=1, column=0, columnspan=2, padx=5, pady=5)
+                row=1, column=1, padx=5, pady=5)
+
+            self.contplay_checkbox_var = tk.BooleanVar(value=False)
+            self.contplay_checkbox = ctk.CTkCheckBox(
+                self.scroll_controls,
+                text="Auto Play",
+                variable=self.contplay_checkbox_var,
+                command=self.toggle_contplay_button,
+            )
+            self.contplay_checkbox.grid(
+                row=1, column=0, padx=5, pady=5)
+
             self.scroll_controls.grid(
                 row=0, column=1, sticky="nsew", pady=10, padx=10)
 
@@ -252,16 +271,16 @@ class epubTextToSpeech(ctk.CTk):
                 text="",
                 command=self.play_epub_audio,
             )
-            self.play_button.grid(row=0, column=0, padx=5)
+            self.play_button.grid(row=0, column=0, padx=5, pady=5)
             self.pause_button = ctk.CTkButton(
                 self.player_frame, image=pausephoto, text="", command=self.pause_audio
             )
 
-            self.pause_button.grid(row=0, column=1, padx=5)
+            self.pause_button.grid(row=0, column=1, padx=5, pady=5)
             self.stop_button = ctk.CTkButton(
                 self.player_frame, image=stopphoto, text="", command=self.stop_audio
             )
-            self.stop_button.grid(row=0, column=2, padx=5)
+            self.stop_button.grid(row=0, column=2, padx=5, pady=5)
             self.audio_progress = ctk.CTkSlider(
                 self.player_frame, from_=0, to=1, command=self.seek_audio
             )
@@ -314,13 +333,20 @@ class epubTextToSpeech(ctk.CTk):
 
             self.audio_play_obj = None
             self.current_audio = None
-            self.audio_thread = None
+            # self.audio_thread = None
+            self.last_played_audio = 0
             self.stop_flag = threading.Event()
+            self.pause_flag = threading.Event()
             self.volume_level = 1.0
             self.audio_duration = 1.0
             self.pause_time = 0
-            self.scroll_adjust = 0.08
-            self.is_paused = False
+            self.scroll_adjust = -0.08
+            self.font_label.configure(
+                text=f"{self.font_size}"
+            )
+            self.scroll_label.configure(
+                text=f"{self.scroll_adjust*100:.0f}"
+            )
 
             # ****** START *****
             if config.CURRENT_EBOOK_PATH:
@@ -380,7 +406,7 @@ class epubTextToSpeech(ctk.CTk):
             )
             self.text_content = ""
             self.book_items = []
-
+            cover_found = False
             for item in self.book.get_items():
                 logging.debug(item)
                 if item.get_type() == ebooklib.ITEM_DOCUMENT:
@@ -392,6 +418,7 @@ class epubTextToSpeech(ctk.CTk):
                     # self.text_content += text
                     # self.text_content += "\n\n**************************\n\n"
                 elif item.get_type() in [ebooklib.ITEM_COVER, ebooklib.ITEM_IMAGE]:
+
                     clean_file_name = utils.clean_string(
                         f"{self.book_title}_{self.book_author}_{item.file_name}")
                     image_path = os.path.join(
@@ -406,12 +433,15 @@ class epubTextToSpeech(ctk.CTk):
                         or "cover" in image_path.lower()
                     ):
                         logging.info(f"{image_path} to be used as cover")
+                        cover_found = True
                         resized_image = utils.resize_image(
                             image_path, (250, 250))
-                        self.bg_photo = ctk.CTkImage(
+                        cover_photo = ctk.CTkImage(
                             light_image=resized_image, size=resized_image.size
                         )
-                        self.cover_label.configure(image=self.bg_photo)
+                        self.cover_label.configure(image=cover_photo)
+            if not cover_found:
+                self.cover_label.configure(image=self.bg_photo)
             self.currentdocitem = config.CURRENT_EBOOK_PART
             self.maxdocitem = len(self.book_items)
             self.docitemmax_label.configure(text=f"/ {self.maxdocitem}")
@@ -421,11 +451,13 @@ class epubTextToSpeech(ctk.CTk):
             logging.error(f"Failed to read eBook: {str(e)}")
 
     def open_pdf(self):
-        file_path = filedialog.askopenfilename(filetypes=[("PDF files", "*.pdf")])
+        file_path = filedialog.askopenfilename(
+            filetypes=[("PDF files", "*.pdf")])
         if file_path:
             try:
                 self.stop_audio()
-                config.configfile["CURRENT"] = {"EBOOK_PATH": file_path, "EBOOK_PART": 1}
+                config.configfile["CURRENT"] = {
+                    "EBOOK_PATH": file_path, "EBOOK_PART": 1}
                 config.save_config()
                 self.read_pdf(file_path)
             except Exception as e:
@@ -446,17 +478,19 @@ class epubTextToSpeech(ctk.CTk):
             for i, page in enumerate(reader.pages):
                 text = page.extract_text()
                 if text:
-                    self.book_items.append({"item": f"Page {i+1}", "text": text})
-           
+                    self.book_items.append(
+                        {"item": f"Page {i+1}", "text": text})
+
             image_path = os.path.join(
-                        config.IMG_PATH,
-                        "pdf.png")
+                config.IMG_PATH,
+                "pdf.png")
             resized_image = utils.resize_image(image_path, (250, 250))
-            self.bg_photo = ctk.CTkImage(light_image=resized_image, size=resized_image.size)
-            self.cover_label.configure(image=self.bg_photo)
-                        
+            cover_photo = ctk.CTkImage(
+                light_image=resized_image, size=resized_image.size)
+            self.cover_label.configure(image=cover_photo)
+
             self.currentdocitem = 1
-            self.pdf_file_path=file_path
+            self.pdf_file_path = file_path
             self.maxdocitem = len(self.book_items)
             self.docitemmax_label.configure(text=f"/ {self.maxdocitem}")
             self.display_text()
@@ -464,7 +498,6 @@ class epubTextToSpeech(ctk.CTk):
         except Exception as e:
             logging.error(traceback.format_exc())
             logging.error(f"Failed to read PDF: {str(e)}")
-
 
     def display_text(self):
         try:
@@ -525,9 +558,9 @@ class epubTextToSpeech(ctk.CTk):
 
     def play_epub_audio(self):
         try:
-            if self.is_paused:
+            if self.pause_flag.is_set():
                 self.seek_audio(self.pause_time / self.audio_duration)
-                self.is_paused = False
+                self.pause_flag.clear()
                 return
 
             audio_file = f"{self.book_title}_{self.book_author}_{self.scope_var.get()}_{str(self.currentdocitem)}"
@@ -580,7 +613,7 @@ class epubTextToSpeech(ctk.CTk):
             self.audio_play_obj.stop()
             self.pause_progress = self.audio_progress.get()
             self.pause_time = self.pause_progress * self.audio_duration
-            self.is_paused = True
+            self.pause_flag.set()
             self.stop_flag.set()
             logging.info(f"Paused at {self.pause_time:.2f} seconds")
 
@@ -693,14 +726,14 @@ class epubTextToSpeech(ctk.CTk):
 
         num = 1
         try:
-            if not "pdf" in self.book_author.lower():
+            if "pdf" not in self.book_author.lower():
                 for item in self.book.get_items():
                     if item.get_type() == ebooklib.ITEM_DOCUMENT:
                         logging.info(f"Item: {item}")
                         soup = BeautifulSoup(
                             item.get_body_content(), "html.parser")
                         text = soup.get_text().strip()
-                        #text = " ".join(text.split())
+                        # text = " ".join(text.split())
                         text = text.replace('"', '')
                         text = text.replace('-', ' ')
                         text = text.replace('–', ' ')
@@ -708,7 +741,8 @@ class epubTextToSpeech(ctk.CTk):
                             if not self.convert_to_audio(
                                 num, text
                             ):  # if synthetization failed with raw text, preprocess it to remove special character and retry
-                                logging.warning("Preprocessing text and try again")
+                                logging.warning(
+                                    "Preprocessing text and try again")
                                 text = self.preprocess_text(text)
                                 self.convert_to_audio(num, text)
                             num += 1
@@ -726,7 +760,7 @@ class epubTextToSpeech(ctk.CTk):
                         num += 1
                     else:
                         logging.warning(f"part {num} is empty")
-                                  
+
             self.synt_inprogress = False
             self.synt_button.configure(
                 fg_color="#3a7ebf",
@@ -768,7 +802,7 @@ class epubTextToSpeech(ctk.CTk):
                     # tts.tts_to_file(text=text_to_convert,
                     #                 file_path=output_path)
                     logging.debug(f"Output Wav File is {output_path}")
-                    out = self.styletts.inference(
+                    self.styletts.inference(
                         text_to_convert, target_voice_path=config.TTS_TARGET_VOICE_PATH, output_wav_file=output_path)
                     # out = self.styletts.inference(
                     #    "Bonjour Guillaume, Comment vas-tu ?", target_voice_path=config.TTS_TARGET_VOICE_PATH, output_wav_file="test.wav")
@@ -796,17 +830,29 @@ class epubTextToSpeech(ctk.CTk):
     def increase_font_size(self):
         self.font_size += 1
         self.content_text.configure(font=("Arial", self.font_size))
+        self.font_label.configure(
+            text=f"{self.font_size}"
+        )
 
     def decrease_font_size(self):
         self.font_size = max(6, self.font_size - 1)
         self.content_text.configure(font=("Arial", self.font_size))
-    
+        self.font_label.configure(
+            text=f"{self.font_size}"
+        )
+
     def increase_scroll(self):
         self.scroll_adjust += 0.01
+        self.scroll_label.configure(
+            text=f"{self.scroll_adjust*100:.0f}"
+        )
 
     def decrease_scroll(self):
         self.scroll_adjust -= 0.01
-        
+        self.scroll_label.configure(
+            text=f"{self.scroll_adjust*100:.0f}"
+        )
+
     def play_audio(self, wavfile):
         try:
             if self.audio_play_obj and self.audio_play_obj.is_playing():
@@ -817,6 +863,7 @@ class epubTextToSpeech(ctk.CTk):
                 messagebox.showwarning("No Audio", "Audio File Missing")
                 return
             latest_audio = wavfile
+            self.last_played_audio = self.currentdocitem
             sound = AudioSegment.from_wav(latest_audio)
             # sound = effects.normalize(sound)
             sound = sound.set_channels(2)
@@ -834,13 +881,15 @@ class epubTextToSpeech(ctk.CTk):
             self.start = time.time()
             self.start_seek = 0
             logging.debug(
-                f"Play start at {self.start} duration {self.audio_duration}")
+                f"Play start at {self.start:.2f} duration {self.audio_duration:.2f}")
+
         except Exception as e:
             logging.error(traceback.format_exc())
             logging.error(f"Failed to play audio: {str(e)}")
 
     def stop_audio(self):
         #  if self.audio_play_obj and self.audio_play_obj.is_playing():
+        self.last_played_audio = 0
         if self.audio_play_obj:
             self.audio_play_obj.stop()
             self.stop_flag.set()
@@ -867,9 +916,10 @@ class epubTextToSpeech(ctk.CTk):
         try:
             seek_time = float(val) * self.audio_duration
             logging.info(
-                f"Audio seek to seek_time {seek_time} audio_duration {self.audio_duration}"
+                f"Audio seek to seek_time {seek_time:.2f} audio_duration {self.audio_duration:.2f}"
             )
             self.stop_audio()
+            time.sleep(0.2)
             segment = self.current_audio[int(seek_time * 1000):]
             segment += 20 * (self.volume_level - 1)
             self.audio_play_obj = sa.play_buffer(
@@ -881,6 +931,7 @@ class epubTextToSpeech(ctk.CTk):
             self.stop_flag.clear()
             self.start = time.time()
             self.start_seek = seek_time
+            self.last_played_audio = self.currentdocitem
 
         except Exception as e:
             logging.error(f"Error during seeking: {str(e)}")
@@ -899,9 +950,9 @@ class epubTextToSpeech(ctk.CTk):
             self.update_audio_time_label(elapsed, self.audio_duration)
             # Still scroll text while paused if checkbox is checked
             if self.sync_checkbox_var.get():
-                self.content_text.yview_moveto(progress - self.scroll_adjust)
+                self.content_text.yview_moveto(progress + self.scroll_adjust)
         else:
-            if self.is_paused:
+            if self.pause_flag.is_set():
                 elapsed = self.pause_progress * self.audio_duration
                 progress = min(elapsed / self.audio_duration, 1.0)
                 self.audio_progress.set(progress)
@@ -923,6 +974,28 @@ class epubTextToSpeech(ctk.CTk):
             self.sync_audio_button.configure(state="normal")
             self.scroll_dec_button.configure(state="disabled")
             self.scroll_inc_button.configure(state="disabled")
+
+    def toggle_contplay_button(self):
+        try:
+            if self.contplay_checkbox_var.get():
+                self.track_audio_end()
+        except Exception as e:
+            logging.error(f"Error when tracking audio: {str(e)}")
+            logging.error(traceback.format_exc())
+
+    def track_audio_end(self):
+        try:
+            if not self.contplay_checkbox_var.get():
+                return
+            if self.last_played_audio > 0 and not self.audio_play_obj.is_playing() and not self.stop_flag.is_set() and not self.pause_flag.is_set():
+                self.next_item()
+                time.sleep(0.5)
+                self.play_epub_audio()
+                time.sleep(2)
+            self.after(2000, self.track_audio_end)
+        except Exception as e:
+            logging.error(f"Error when tracking audio: {str(e)}")
+            logging.error(traceback.format_exc())
 
     def set_volume(self, val):
         self.volume_level = float(val)
