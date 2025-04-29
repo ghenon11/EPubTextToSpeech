@@ -26,7 +26,7 @@ def initialize():
         SYNTHETIZATION_LEVEL
 
     INSTALL_DIR = utils.get_main_dir()
-    DOWNLOAD_PATH = os.path.join(INSTALL_DIR, "audio")
+    DOWNLOAD_PATH = os.path.join(INSTALL_DIR, "Media")
     IMG_PATH = os.path.join(INSTALL_DIR, "imgs")
     CONFIG_FILE_PATH = os.path.join(INSTALL_DIR, "config.ini")
     configfile = configparser.ConfigParser()

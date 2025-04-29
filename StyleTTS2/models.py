@@ -10,6 +10,8 @@ from StyleTTS2.Modules.diffusion.modules import Transformer1d, StyleTransformer1
 from StyleTTS2.Modules.diffusion.sampler import KDiffusion, LogNormalDistribution
 from torch.nn.utils.parametrizations import weight_norm
 from torch.nn.utils import spectral_norm
+from Modules.istftnet import Decoder as Decoder_istftnet
+from Modules.hifigan import Decoder as Decoder_hifigan
 import torch.nn.functional as F
 import torch.nn as nn
 import torch
@@ -664,8 +666,7 @@ def build_model(args, text_aligner, pitch_extractor, bert):
     assert args.decoder.type in ['istftnet', 'hifigan'], 'Decoder type unknown'
 
     if args.decoder.type == "istftnet":
-        from Modules.istftnet import Decoder
-        decoder = Decoder(dim_in=args.hidden_dim, style_dim=args.style_dim, dim_out=args.n_mels,
+        decoder = Decoder_istftnet(dim_in=args.hidden_dim, style_dim=args.style_dim, dim_out=args.n_mels,
                           resblock_kernel_sizes=args.decoder.resblock_kernel_sizes,
                           upsample_rates=args.decoder.upsample_rates,
                           upsample_initial_channel=args.decoder.upsample_initial_channel,
@@ -673,8 +674,7 @@ def build_model(args, text_aligner, pitch_extractor, bert):
                           upsample_kernel_sizes=args.decoder.upsample_kernel_sizes,
                           gen_istft_n_fft=args.decoder.gen_istft_n_fft, gen_istft_hop_size=args.decoder.gen_istft_hop_size)
     else:
-        from Modules.hifigan import Decoder
-        decoder = Decoder(dim_in=args.hidden_dim, style_dim=args.style_dim, dim_out=args.n_mels,
+        decoder = Decoder_hifigan(dim_in=args.hidden_dim, style_dim=args.style_dim, dim_out=args.n_mels,
                           resblock_kernel_sizes=args.decoder.resblock_kernel_sizes,
                           upsample_rates=args.decoder.upsample_rates,
                           upsample_initial_channel=args.decoder.upsample_initial_channel,

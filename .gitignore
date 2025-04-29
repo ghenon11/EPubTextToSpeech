@@ -164,3 +164,4 @@ cython_debug/
 logs/epubTextToSpeech.log.1
 Models/config_orig.yml
 Models/epoch_2nd_00045.pth
+/Media

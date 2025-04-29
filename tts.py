@@ -694,26 +694,27 @@ class StyleTTS2:
                 out = self.model.decoder(asr, F0_pred, N_pred,
                                          ref.squeeze().unsqueeze(0))
                 output = out.squeeze().cpu().numpy()[..., :-50]
-                output = out.squeeze().cpu().numpy()[..., :-50]
+
                 try:
                     with np.errstate(over='raise', invalid='raise'):
                         synth_mean = np.mean(np.abs(output)) * 100
+                        max_value = np.max(np.abs(output)) *100
                 except FloatingPointError:
                     logger.error(
                         "Overflow or invalid value detected during synth_mean calculation.")
                     synth_mean = MAX_SYNTH_MEAN * 2  # to force retry
 
-                if np.isnan(synth_mean):
+                if np.isnan(synth_mean) or np.isnan(max_value):
                     logger.error(
                         f"Segment produced NaN, memory usage is {psutil.virtual_memory().percent}%")
                     synth_mean = MAX_SYNTH_MEAN * 2  # to force retry
                 else:
                     logger.info(
-                        f"Segment absolute average is {synth_mean}, memory usage is {psutil.virtual_memory().percent}%")
+                        f"Segment absolute average is {synth_mean:.2f}, max value is {max_value:.2f}, memory usage is {psutil.virtual_memory().percent}%")
 
                 if synth_mean <= MAX_SYNTH_MEAN:
                     return output, s_pred
                 logger.warning(
                     "Segment average is to high or segment failed, retrying segment inference...")
                 attempts += 1
-        return out.squeeze().cpu().numpy()[..., :-100], s_pred
+        return output, s_pred

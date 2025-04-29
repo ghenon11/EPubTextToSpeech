@@ -22,11 +22,31 @@ import inspect
 import utils
 import config
 import tts
+import nltk
 import sys
+
 sys.setrecursionlimit(5000)
 print("Importing modules and launching application...")
 
 warnings.filterwarnings("ignore", category=FutureWarning)
+
+# Set the nltk data path and frozen_dir
+  
+if getattr(sys, 'frozen', False):
+
+    # If the application is frozen, set the path to the directory containing the executable
+
+    #nltk.data.path.append(os.path.join(sys._MEIPASS, 'nltk_data'))
+    print("This is a frozen application")
+    nltk.data.path.append(os.path.join(sys.executable, 'nltk_data'))
+    sys.frozen_dir = os.path.dirname(sys.executable)
+
+else:
+
+    # If the application is not frozen, set the path to the default nltk data directory
+    print("This is NOT a frozen application")
+    nltk.data.path.append(os.path.join(os.path.dirname(__file__), 'nltk_data'))
+    
 
 # StylesTTS2 https://github.com/yl4579/StyleTTS2
 # locally C:\Users\gheno\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\styletts2
@@ -598,7 +618,7 @@ class epubTextToSpeech(ctk.CTk):
             # Pass ratio 0.0 - 1.0
             # start 10s before
             logging.info(
-                f"Audio synced to {percent_read}% of text: seek_time {seek_time} audio_duration {self.audio_duration}"
+                f"Audio synced to {percent_read}% of text: seek_time {seek_time:.2f} audio_duration {self.audio_duration:.2f}"
             )
             self.seek_audio(percent_read)
             # time.sleep(1)
