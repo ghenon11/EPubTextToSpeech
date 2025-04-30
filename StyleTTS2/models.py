@@ -10,8 +10,8 @@ from StyleTTS2.Modules.diffusion.modules import Transformer1d, StyleTransformer1
 from StyleTTS2.Modules.diffusion.sampler import KDiffusion, LogNormalDistribution
 from torch.nn.utils.parametrizations import weight_norm
 from torch.nn.utils import spectral_norm
-from Modules.istftnet import Decoder as Decoder_istftnet
-from Modules.hifigan import Decoder as Decoder_hifigan
+from StyleTTS2.Modules.istftnet import Decoder as Decoder_istftnet
+from StyleTTS2.Modules.hifigan import Decoder as Decoder_hifigan
 import torch.nn.functional as F
 import torch.nn as nn
 import torch

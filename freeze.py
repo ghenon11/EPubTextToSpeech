@@ -13,6 +13,9 @@ try:
 #    include_files.append((punkt_path, 'nltk_data/tokenizers/punkt'))
 except LookupError:   
     print("Error: punkt tokenizer not found. Run nltk.download('punkt') before building.")
+
+torch_lib_dir = os.path.join(os.path.dirname(torch.__file__), 'lib')
+sklearn_lib_dir = os.path.join(os.path.dirname(sklearn.__file__), ".libs")
     
 # Define the directories you want to include
 include_directories = [
@@ -22,9 +25,12 @@ include_directories = [
     ('Media', 'Media'),
     ('Models', 'Models'),
     ('StyleTTS2', 'StyleTTS2'),
-    ('StyleTTS2', 'lib\StyleTTS2'),
+    ('StyleTTS2', os.path.join("lib","StyleTTS2")),
     ('Imgs', 'Imgs'),
-    (punkt_path, 'nltk_data/tokenizers/punkt/PY3')
+    (punkt_path, os.path.join("nltk_data","tokenizers","punkt","PY3")),
+    (punkt_path, os.path.join("nltk_data","tokenizers","punkt")),
+    (torch_lib_dir, os.path.join("lib","torch","lib")),
+    (sklearn_lib_dir, os.path.join("lib","sklearn",".libs"))
 ]
 
 # Create a list of files to include
@@ -37,10 +43,8 @@ for source_dir, target_dir in include_directories:
 include_files.append("config.ini")
 include_files.append("epubTextToSpeech.bat")
 
-torch_lib_dir = os.path.join(os.path.dirname(torch.__file__), 'lib')
-include_files.append((torch_lib_dir, "torch/lib"))
-sklearn_lib_dir = os.path.join(os.path.dirname(sklearn.__file__), ".libs")
-include_files.append((sklearn_lib_dir, "sklearn/.libs"))
+include_files.append((torch_lib_dir, os.path.join("lib","torch","lib")))
+include_files.append((sklearn_lib_dir, os.path.join("lib","sklearn",".libs")))
 
 #executables = [Executable("epubTextToSpeech.py", base = 'Win32GUI', icon = 'D:\Python\Epubtextspeech\Imgs\voice_presentation.ico')]
 executables = [Executable("epubTextToSpeech.py", icon = 'D:\Python\Epubtextspeech\Imgs\voice_presentation.ico'),"setup.py"]
@@ -49,6 +53,7 @@ executables = [Executable("epubTextToSpeech.py", icon = 'D:\Python\Epubtextspeec
 build_exe_options = {
     "packages": ["transformers","torch","nltk","numpy","tokenizers","phonemizer","scipy","customtkinter","tkinter","numba","sklearn"],
     "excludes": [],
+    "include_msvcr": True,
     "include_files": include_files
 }
 

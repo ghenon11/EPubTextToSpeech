@@ -19,13 +19,15 @@ if not exist logs mkdir logs
 
 rem Set log file with date and time
 rem set "LOGFILE=logs\epubTextToSpeech_%DATE:~10,4%-%DATE:~4,2%-%DATE:~7,2%_%TIME:~0,2%%TIME:~3,2%%TIME:~6,2%.log"
-set "LOGFILE=logs\epubTextToSpeech_Launcher.log"
+set "LOGFILE=%BASE_DIR%\logs\epubTextToSpeech_Launcher.log"
 
 rem Clean the logfile name (remove spaces)
 set "LOGFILE=%LOGFILE: =0%"
 
-
-echo "Launching EPubTextToSpeech"  > "%LOGFILE%" 2>&1
+echo Launching EPubTextToSpeech
+echo Current date and time: %date% %time%
+echo Launching EPubTextToSpeech  > "%LOGFILE%" 2>&1
+echo Current date and time: %date% %time% >> "%LOGFILE%" 2>&1
 rem Confirm ffmpeg is correctly available
 where ffmpeg.exe >> "%LOGFILE%" 2>&1
 ffmpeg.exe -version >> "%LOGFILE%" 2>&1
@@ -38,4 +40,4 @@ if exist %EXE_FILE% (
 ) else (
 	python "epubTextToSpeech.py" >> "%LOGFILE%" 2>&1
 )
-
+pause
