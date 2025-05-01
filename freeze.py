@@ -52,7 +52,7 @@ executables = [Executable(
 
 
 build_exe_options = {
-    "packages": ["transformers", "torch", "nltk", "numpy", "tokenizers", "phonemizer", "scipy", "customtkinter", "tkinter", "numba", "sklearn"],
+    "packages": ["transformers", "torch", "torch.jit", "nltk", "numpy", "tokenizers", "phonemizer", "scipy", "customtkinter", "tkinter", "numba", "sklearn"],
     "excludes": [],
     "include_msvcr": True,
     "include_files": include_files

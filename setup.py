@@ -61,7 +61,7 @@ INSTALL_DIR = os.path.dirname(sys.executable)
 replacements = {
 
     "D:\\Python\\Epubtextspeech\\Models": os.path.join(INSTALL_DIR, "Models"),
-    "D:\Python\\Epubtextspeech\\Epub": os.path.join(INSTALL_DIR, "Epub"),
+    "D:\\Python\\Epubtextspeech\\Epub": os.path.join(INSTALL_DIR, "Epub"),
     "D:\\Python\\Epubtextspeech\\StyleTTS2": os.path.join(INSTALL_DIR, "StyleTTS2")
 
 }

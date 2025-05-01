@@ -1,4 +1,25 @@
 
+import tts
+import config
+import utils
+import inspect
+import logging
+import threading
+import traceback
+import customtkinter as ctk
+import tkinter as tk
+from tkinter import messagebox, filedialog
+from PIL import Image
+from PyPDF2 import PdfReader
+from bs4 import BeautifulSoup
+import ebooklib
+from ebooklib import epub
+import pathlib
+import string
+import re
+from pydub import AudioSegment, effects
+import simpleaudio as sa
+import nltk
 import warnings
 import sys
 import os
@@ -8,42 +29,22 @@ sys.setrecursionlimit(5000)
 print("Importing modules and launching application...")
 if getattr(sys, 'frozen', False):
     setattr(sys, 'frozen_dir', os.path.dirname(sys.executable))
-    
+
 warnings.filterwarnings("ignore", category=FutureWarning)
 
-import nltk
 # Set the nltk data path and frozen_dir
 
 if getattr(sys, 'frozen', False):
     # If the application is frozen, set the path to the directory containing the executable
-    #nltk.data.path.append(os.path.join(sys._MEIPASS, 'nltk_data'))
+    # nltk.data.path.append(os.path.join(sys._MEIPASS, 'nltk_data'))
     print("This is a frozen application")
     nltk.data.path.append(os.path.join(sys.executable, 'nltk_data'))
 else:
     # If the application is not frozen, set the path to the default nltk data directory
     print("This is NOT a frozen application")
     nltk.data.path.append(os.path.join(os.path.dirname(__file__), 'nltk_data'))
-    
-import simpleaudio as sa
-from pydub import AudioSegment, effects
-import re
-import string
-import pathlib
-from ebooklib import epub
-import ebooklib
-from bs4 import BeautifulSoup
-from PyPDF2 import PdfReader
-from PIL import Image
-from tkinter import messagebox, filedialog
-import tkinter as tk
-import customtkinter as ctk
-import traceback
-import threading
-import logging
-import inspect
-import utils
-import config
-import tts
+
+sys.stdout.flush()
 
 
 # StylesTTS2 https://github.com/yl4579/StyleTTS2
