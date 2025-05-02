@@ -1,5 +1,6 @@
 
-import tts
+
+
 import config
 import utils
 import inspect
@@ -19,7 +20,7 @@ import string
 import re
 from pydub import AudioSegment, effects
 import simpleaudio as sa
-import nltk
+
 import warnings
 import sys
 import os
@@ -32,6 +33,8 @@ if getattr(sys, 'frozen', False):
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
+import tts
+import nltk
 # Set the nltk data path and frozen_dir
 
 if getattr(sys, 'frozen', False):
@@ -59,7 +62,7 @@ sys.stdout.flush()
 # C:\Users\gheno\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg.Shared_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-6.1.1-full_build-shared\bin\ffmpeg.exe
 
 __author__ = "Guillaume HENON"
-__version__ = "0.7"
+__version__ = "1.0"
 
 
 class epubTextToSpeech(ctk.CTk):
@@ -75,27 +78,29 @@ class epubTextToSpeech(ctk.CTk):
             )
             # width, height = 1000, 600
             width, height = screen_width - 100, screen_height - 100
-            x, y = (screen_width / 2) - \
-                (width / 2), (screen_height / 2) - (height / 2)
-            self.geometry(f"{width}x{height}+{int(x)}+{int(y)}")
+            
+            if int(config.FULL_SCREEN)==0:
+                x, y = (screen_width / 2) - (width / 2), (screen_height / 2) - (height / 2)
+                self.geometry(f"{width}x{height}+{int(x)}+{int(y)}")
             self.protocol("WM_DELETE_WINDOW", self.confirm_close)
             self.iconbitmap(config.ICO)
             # self.iconphoto(True, tk.PhotoImage(file=config.BG_IMG))
             self.font_size = 16
             self.grid_rowconfigure(0, weight=20)
-            self.grid_rowconfigure(1, weight=1)
+            #self.grid_rowconfigure(1, weight=1)
             self.grid_columnconfigure(0, weight=1)
-
+            
             self.main_frame = ctk.CTkFrame(self)
-            self.main_frame.grid_rowconfigure(0, weight=1)
+            self.main_frame.grid_rowconfigure(0, weight=4)
             self.main_frame.grid_rowconfigure(1, weight=0)
-            self.main_frame.grid_rowconfigure(2, weight=4)
-            self.main_frame.grid_rowconfigure(3, weight=1)
-            self.main_frame.grid_rowconfigure(4, weight=1)
+            self.main_frame.grid_rowconfigure(2, weight=16)
+            self.main_frame.grid_rowconfigure(3, weight=4)
+            self.main_frame.grid_rowconfigure(4, weight=4)
+            self.main_frame.grid_rowconfigure(5, weight=1)
             self.main_frame.grid_columnconfigure(0, weight=1)
             self.main_frame.grid_columnconfigure(1, weight=4)
             self.main_frame.grid(row=0, column=0, padx=10,
-                                 pady=10, sticky="nsew")
+                                 pady=5, sticky="nsew")
 
             self.controls_frame = ctk.CTkFrame(self.main_frame)
             self.controls_frame.grid_rowconfigure(0, weight=1)
@@ -108,8 +113,8 @@ class epubTextToSpeech(ctk.CTk):
             self.openpdf_button = ctk.CTkButton(
                 self.controls_frame, text="Open PDF", command=self.open_pdf
             )
-            self.openpdf_button.grid(row=0, column=1, pady=10, padx=10)
-            self.openebook_button.grid(row=0, column=0, pady=10, padx=10)
+            self.openpdf_button.grid(row=0, column=1, pady=5, padx=10)
+            self.openebook_button.grid(row=0, column=0, pady=5, padx=10)
             self.synt_button = ctk.CTkButton(
                 self.controls_frame,
                 text="Synthetize Audio",
@@ -119,20 +124,20 @@ class epubTextToSpeech(ctk.CTk):
                 self.controls_frame,
                 text="Synthetize & Play Selection",
                 command=self.synthetize_and_play_selection)
-            self.synt_button.grid(row=1, column=0, padx=10, pady=10)
-            self.synt_and_play_button.grid(row=1, column=1, padx=10, pady=10)
+            self.synt_button.grid(row=1, column=0, padx=10, pady=5)
+            self.synt_and_play_button.grid(row=1, column=1, padx=10, pady=5)
             self.controls_frame.grid(
-                row=0, column=0, padx=10, pady=10, sticky="nsew")
+                row=0, column=0, padx=10, pady=5, sticky="nsew")
 
             self.content_text = ctk.CTkTextbox(self.main_frame, wrap="word")
             self.content_text.configure(font=("Arial", self.font_size))
             self.content_text.grid(
-                row=0, rowspan=4, column=1, pady=10, padx=10, sticky="nsew"
+                row=0, rowspan=4, column=1, pady=5, padx=10, sticky="nsew"
             )
 
             self.text_control = ctk.CTkFrame(self.main_frame)
             self.text_control.grid(
-                row=4, column=1, sticky="nsew", pady=10, padx=10)
+                row=4, column=0, columnspan=2, sticky="nsew", pady=5, padx=10)
             self.text_control.grid_rowconfigure(0, weight=1)
             self.text_control.grid_columnconfigure(0, weight=1)
             self.text_control.grid_columnconfigure(1, weight=1)
@@ -146,18 +151,18 @@ class epubTextToSpeech(ctk.CTk):
             self.font_controls.grid_columnconfigure(2, weight=1)
             ctk.CTkButton(
                 self.font_controls, text="A+", width=30, command=self.increase_font_size
-            ).grid(row=0, column=0)
+            ).grid(row=0, column=2)
             self.font_label = ctk.CTkLabel(
                 self.font_controls, text="12"
             )
             self.font_label.grid(row=0, column=1)
             ctk.CTkButton(
                 self.font_controls, text="A-", width=30, command=self.decrease_font_size
-            ).grid(row=0, column=2)
+            ).grid(row=0, column=0)
             self.scroll_inc_button = ctk.CTkButton(
                 self.font_controls, text="S+", width=30, command=self.increase_scroll
             )
-            self.scroll_inc_button.grid(row=1, column=0)
+            self.scroll_inc_button.grid(row=1, column=2)
             self.scroll_label = ctk.CTkLabel(
                 self.font_controls, text="8"
             )
@@ -165,11 +170,11 @@ class epubTextToSpeech(ctk.CTk):
             self.scroll_dec_button = ctk.CTkButton(
                 self.font_controls, text="S-", width=30, command=self.decrease_scroll
             )
-            self.scroll_dec_button.grid(row=1, column=2)
+            self.scroll_dec_button.grid(row=1, column=0)
             self.scroll_dec_button.configure(state="disabled")
             self.scroll_inc_button.configure(state="disabled")
             self.font_controls.grid(
-                row=0, column=2, sticky="nsew", pady=10, padx=10)
+                row=0, column=2, sticky="nsew", pady=5, padx=10)
 
             self.scroll_controls = ctk.CTkFrame(self.text_control)
             self.scroll_controls.grid_rowconfigure(0, weight=1)
@@ -210,7 +215,7 @@ class epubTextToSpeech(ctk.CTk):
                 row=1, column=0, padx=5, pady=5)
 
             self.scroll_controls.grid(
-                row=0, column=1, sticky="nsew", pady=10, padx=10)
+                row=0, column=1, sticky="nsew", pady=5, padx=10)
 
             self.textbox_controls = ctk.CTkFrame(self.text_control)
             self.textbox_controls.grid_rowconfigure(0, weight=1)
@@ -235,7 +240,7 @@ class epubTextToSpeech(ctk.CTk):
             ).grid(row=0, column=3)
 
             self.textbox_controls.grid(
-                row=0, column=0, sticky="nsew", pady=10, padx=10)
+                row=0, column=0, sticky="nsew", pady=5, padx=10)
 
             # self.scope_frame = ctk.CTkFrame(self.main_frame)
             # self.scope_frame.grid_rowconfigure(0, weight=1)
@@ -264,7 +269,7 @@ class epubTextToSpeech(ctk.CTk):
             )
             self.book_title_label.grid(row=0, column=0, padx=5)
             self.cover_frame.grid(row=2, column=0, padx=10,
-                                  pady=10, sticky="nsew")
+                                  pady=5, sticky="nsew")
 
             self.player_frame = ctk.CTkFrame(self.main_frame)
             playimage = utils.resize_image(
@@ -283,7 +288,7 @@ class epubTextToSpeech(ctk.CTk):
             stopphoto = ctk.CTkImage(
                 light_image=stopimage, size=stopimage.size)
             self.player_frame.grid(
-                row=3, column=0, padx=10, pady=10, sticky="nsew")
+                row=3, column=0, padx=10, pady=5, sticky="nsew")
             self.play_button = ctk.CTkButton(
                 self.player_frame,
                 image=playphoto,
@@ -321,26 +326,27 @@ class epubTextToSpeech(ctk.CTk):
             # self.volume_slider.grid(row=2, column=0, columnspan=2,padx=5)
             # self.player_frame.grid_rowconfigure(2, weight=1)
 
-            self.end_frame = ctk.CTkFrame(self.main_frame)
-            self.end_frame.grid_rowconfigure(0, weight=1)
-            self.end_frame.grid_columnconfigure(0, weight=1)
-            ctk.CTkButton(
-                self.end_frame,
-                text="Exit",
-                fg_color="red",
-                hover_color="darkred",
-                command=self.exit_app,
-            ).grid(row=0, column=0, pady=10)
-            self.end_frame.grid(row=4, column=0, padx=10,
-                                pady=10, sticky="nsew")
+            # self.end_frame = ctk.CTkFrame(self.main_frame)
+            # self.end_frame.grid_rowconfigure(0, weight=1)
+            # self.end_frame.grid_columnconfigure(0, weight=1)
+            # ctk.CTkButton(
+                # self.end_frame,
+                # text="Exit",
+                # fg_color="red",
+                # hover_color="darkred",
+                # command=self.exit_app,
+            # ).grid(row=0, column=0, pady=5)
+            # self.end_frame.grid(row=4, column=0, padx=10,
+                                # pady=5, sticky="nsew")
 
             ctk.CTkLabel(
-                self,
+                self.main_frame,
                 text=f"{__author__} - gui.henon@gmail.com - Version {__version__} - 2025",
                 font=("Arial", 9),
+                height=10,
                 anchor="e",
                 justify="right",
-            ).grid(row=1, column=0, padx=5, sticky="se")
+            ).grid(row=5, column=1, padx=10, sticky="e")
 
             self.text_content = ""
             self.synt_inprogress = False
@@ -454,7 +460,7 @@ class epubTextToSpeech(ctk.CTk):
                         logging.info(f"{image_path} to be used as cover")
                         cover_found = True
                         resized_image = utils.resize_image(
-                            image_path, (250, 250))
+                            image_path, (300, 300))
                         cover_photo = ctk.CTkImage(
                             light_image=resized_image, size=resized_image.size
                         )
@@ -784,7 +790,7 @@ class epubTextToSpeech(ctk.CTk):
             self.synt_button.configure(
                 fg_color="#3a7ebf",
                 hover_color="#325882",
-                text="Synthetization completed",
+                text="Synthetize Audio",
             )
 
         except Exception as e:
@@ -1035,4 +1041,6 @@ if __name__ == "__main__":
     logging.getLogger(__name__)
     logging.info("Application starts")
     app = epubTextToSpeech()
+    if int(config.FULL_SCREEN)==1:
+        app.after(0, lambda:app.state('zoomed'))
     app.mainloop()

@@ -25,6 +25,8 @@ import nltk
 from nltk.tokenize import word_tokenize
 import logging
 
+import config
+
 logger = logging.getLogger()
 
 try:
@@ -39,9 +41,6 @@ torch.backends.cudnn.deterministic = True
 random.seed(0)
 
 np.random.seed(0)
-
-MAX_SYNTH_MEAN = 6
-MAX_SYNTH_ATTEMPTS = 5
 
 LIBRI_TTS_CHECKPOINT_URL = "https://huggingface.co/yl4579/StyleTTS2-LibriTTS/resolve/main/Models/LibriTTS/epochs_2nd_00020.pth"
 LIBRI_TTS_CONFIG_URL = "https://huggingface.co/yl4579/StyleTTS2-LibriTTS/resolve/main/Models/LibriTTS/config.yml?download=true"
@@ -624,7 +623,8 @@ class StyleTTS2:
         tokens = torch.LongTensor(tokens).to(self.device).unsqueeze(0)
 
         attempts = 0
-        while attempts < MAX_SYNTH_ATTEMPTS:
+        MAX_SYNTH=int(config.MAX_SYNTH)
+        while attempts < int(config.MAX_SYNTH_ATTEMPTS):
             with torch.no_grad():
                 input_lengths = torch.LongTensor(
                     [tokens.shape[-1]]).to(self.device)
@@ -697,24 +697,24 @@ class StyleTTS2:
 
                 try:
                     with np.errstate(over='raise', invalid='raise'):
-                        synth_mean = np.mean(np.abs(output)) * 100
-                        max_value = np.max(np.abs(output)) *100
+                       # synth_mean = np.mean(np.abs(output)) * 100
+                        max_value = np.max(np.abs(output)) * 100
                 except FloatingPointError:
                     logger.error(
                         "Overflow or invalid value detected during synth_mean calculation.")
-                    synth_mean = MAX_SYNTH_MEAN * 2  # to force retry
+                    max_value = MAX_SYNTH  # to force retry
 
-                if np.isnan(synth_mean) or np.isnan(max_value):
+                if np.isnan(max_value):
                     logger.error(
                         f"Segment produced NaN, memory usage is {psutil.virtual_memory().percent}%")
-                    synth_mean = MAX_SYNTH_MEAN * 2  # to force retry
+                    max_value = MAX_SYNTH # to force retry
                 else:
                     logger.info(
-                        f"Segment absolute average is {synth_mean:.2f}, max value is {max_value:.2f}, memory usage is {psutil.virtual_memory().percent}%")
+                        f"Segment max value is {max_value:.2f}, memory usage is {psutil.virtual_memory().percent}% for attempts {attempts+1}")
 
-                if synth_mean <= MAX_SYNTH_MEAN:
+                if max_value <= MAX_SYNTH:
                     return output, s_pred
                 logger.warning(
-                    "Segment average is to high or segment failed, retrying segment inference...")
+                    f"Segment max value is too high (above {MAX_SYNTH}) or segment failed, retrying segment inference...")
                 attempts += 1
         return output, s_pred

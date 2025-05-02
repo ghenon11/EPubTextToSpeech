@@ -35,7 +35,8 @@ where ffmpeg.exe >> "%LOGFILE%" 2>&1
 ffmpeg.exe -version >> "%LOGFILE%" 2>&1
 where espeak-ng.exe >> "%LOGFILE%" 2>&1
 espeak-ng.exe --version >> "%LOGFILE%" 2>&1
-echo Logs saved to %LOGFILE%
+echo Launcher logs saved to %LOGFILE%
+echo Application logs available in %BASE_DIR%\logs\
 rem Launch the Python script and log everything
 
 set EXE_FILE=%BASE_DIR%\epubTextToSpeech.exe

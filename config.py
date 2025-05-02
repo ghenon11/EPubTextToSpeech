@@ -23,7 +23,10 @@ def initialize():
         TTS_MODEL_CHECKPOINT_PATH, \
         TTS_CONFIG_PATH, \
         TTS_TARGET_VOICE_PATH, \
-        SYNTHETIZATION_LEVEL
+        MAX_SYNTH, \
+        MAX_SYNTH_ATTEMPTS, \
+        SYNTHETIZATION_LEVEL, \
+        FULL_SCREEN
 
     INSTALL_DIR = utils.get_main_dir()
     DOWNLOAD_PATH = os.path.join(INSTALL_DIR, "Media")
@@ -46,6 +49,9 @@ def initialize():
     TTS_CONFIG_PATH = configfile["SETTINGS"]["TTS_MODEL_CONFIG"]
     TTS_TARGET_VOICE_PATH = configfile["SETTINGS"]["TTS_TARGET_VOICE"]
     SYNTHETIZATION_LEVEL = configfile["SETTINGS"]["SYNTHETIZATION_LEVEL"]
+    MAX_SYNTH = configfile["SETTINGS"]["MAX_SYNTH"]
+    MAX_SYNTH_ATTEMPTS = configfile["SETTINGS"]["MAX_SYNTH_ATTEMPTS"]
+    FULL_SCREEN = configfile["SETTINGS"]["FULL_SCREEN"]
 
 
 def load_config():
@@ -67,7 +73,10 @@ def load_config():
             "TTS_MODEL": "tts_models/fra/fairseq/vits",
             "TTS_MODEL_CHECKPOINT_PATH": ".\Models\epoch_2nd_00045.pth",
             "TTS_CONFIG_PATH": ".\Models\config.yml",
-            "TTS_TARGET_VOICE": ".\Models\reference_audio.wav"
+            "TTS_TARGET_VOICE": ".\Models\reference_audio.wav",
+            "MAX_SYNTH":90,
+            "MAX_SYNTH_ATTEMPTS":5,
+            "FULL_SCREEN":1
         }
         configfile["CURRENT"] = {"EBOOK_PATH": "", "EBOOK_PART": 1}
 
