@@ -33,6 +33,7 @@ if getattr(sys, 'frozen', False):
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
+# importing those modules later so that sys attribute frozen_dir is set
 import tts
 import nltk
 # Set the nltk data path and frozen_dir
@@ -49,6 +50,7 @@ else:
 
 sys.stdout.flush()
 
+nltk.download('punkt_tab')
 
 # StylesTTS2 https://github.com/yl4579/StyleTTS2
 # locally C:\Users\gheno\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\styletts2
@@ -62,7 +64,7 @@ sys.stdout.flush()
 # C:\Users\gheno\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg.Shared_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-6.1.1-full_build-shared\bin\ffmpeg.exe
 
 __author__ = "Guillaume HENON"
-__version__ = "1.0"
+__version__ = "1.01"
 
 
 class epubTextToSpeech(ctk.CTk):
@@ -762,6 +764,8 @@ class epubTextToSpeech(ctk.CTk):
                         text = text.replace('"', '')
                         text = text.replace('-', ' ')
                         text = text.replace('–', ' ')
+                        # special case of M. to be Monsieur
+                        text=text.replace('M. ','monsieur ')
                         if text:
                             if not self.convert_to_audio(
                                 num, text
