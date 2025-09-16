@@ -1,5 +1,5 @@
 from monotonic_align import maximum_path  # modules to be installed
-from monotonic_align import mask_from_lens
+#from monotonic_align import mask_from_lens
 from monotonic_align.core import maximum_path_c
 import numpy as np
 import torch
@@ -11,6 +11,25 @@ import librosa
 import matplotlib.pyplot as plt
 from munch import Munch
 
+# -------------------------------
+# Function: mask_from_lens
+# -------------------------------
+def mask_from_lens(lengths, max_len=None):
+    """
+    Create a boolean mask from sequence lengths.
+
+    Args:
+        lengths (torch.Tensor): Tensor of shape (B,) with sequence lengths
+        max_len (int, optional): Maximum sequence length. Defaults to max in lengths.
+
+    Returns:
+        torch.Tensor: Boolean mask of shape (B, max_len), True for valid positions
+    """
+    if max_len is None:
+        max_len = lengths.max().item()
+    ids = torch.arange(max_len, device=lengths.device)
+    mask = ids.unsqueeze(0) < lengths.unsqueeze(1)
+    return mask
 
 def maximum_path(neg_cent, mask):
     """ Cython optimized version.
