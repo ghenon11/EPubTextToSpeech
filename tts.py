@@ -562,90 +562,94 @@ class StyleTTS2:
     ):
         """
         Performs inference for segment of longform text; see long_inference()
-        :param text: Input text
-        :param prev_s: Style vector of previous speech segment (used to keep voice consistent in longform inference)
-        :param ref_s: Pre-computed style vector of target voice to clone
-        :param alpha: Determines timbre of speech, higher means style is more suitable to text than to the target voice.
-        :param beta: Determines prosody of speech, higher means style is more suitable to text than to the target voice.
-        :param t: Determines consistency of style across inference segments (0 lowest, 1 highest)
-        :param diffusion_steps: The more the steps, the more diverse the samples are, with the cost of speed.
-        :param embedding_scale: Higher scale means style is more conditional to the input text and hence more emotional.
-        :return: audio data as a Numpy array
         """
-        text = text.strip()
-        text = text.replace('"', "")
-        # GHE updateSynthetizing
-        # phonemized_text = self.phoneme_converter.phonemize(text)
+        text = text.strip().replace('"', "")
+
+        if not text:
+            logger.warning("Empty text segment after stripping; returning silence.")
+            return np.zeros(0, dtype=np.float32), prev_s
+
         logger.info(
-            f"Synthetizing text segment starting with [{text[:50]}], ending with [{text[-50:]}]")
-        # unicode_codes = unicode_code_points(text)
-        # logging.debug(str(unicode_codes))
-        # GHE, updated phonemize
-        # was phonemized_text = '\n'.join(
-        #    self.phoneme_converter.phonemize(text.splitlines()))
+            f"Synthetizing text segment starting with [{text[:50]}], ending with [{text[-50:]}]"
+        )
 
         lines = text.splitlines()
         try:
             phonemized_lines = self.phoneme_converter.phonemize(lines)
         except Exception as e:
             logger.warning(f"[Phonemizer] failed: {e}")
-            phonemized_lines = self.phoneme_converter.phonemize(
-                [' '.join(lines)])
+            phonemized_lines = self.phoneme_converter.phonemize([' '.join(lines)])
 
         if len(phonemized_lines) != len(lines):
             logger.warning(
-                f"[Phonemizer] Line mismatch: {len(lines)} input vs {len(phonemized_lines)} output")
+                f"[Phonemizer] Line mismatch: {len(lines)} input vs {len(phonemized_lines)} output"
+            )
             logger.warning(f"[Phonemizer] Input lines: {lines}")
             logger.warning(f"[Phonemizer] Output lines: {phonemized_lines}")
-            phonemized_text = self.phoneme_converter.phonemize([' '.join(lines)])[
-                0]
+            phonemized_text = self.phoneme_converter.phonemize([' '.join(lines)])[0]
         else:
             phonemized_text = '\n'.join(phonemized_lines)
 
-        # 🔠 Bonus Debug: Word count alignment logging
         original_word_count = len(word_tokenize(text))
         phoneme_word_count = len(word_tokenize(phonemized_text))
         logger.debug(
-            f"[Phonemizer] Original words: {original_word_count}, Phonemized tokens: {phoneme_word_count}")
-
-        # ❗ Optional safety assertion — uncomment if you want hard stop on large mismatches
-        # assert abs(original_word_count - phoneme_word_count) <= original_word_count * 0.3, \
-        #     f"[Phonemizer] Token mismatch too large! ({original_word_count} vs {phoneme_word_count})"
+            f"[Phonemizer] Original words: {original_word_count}, Phonemized tokens: {phoneme_word_count}"
+        )
 
         ps = word_tokenize(str(phonemized_text))
-        phoneme_string = " ".join(ps)
-        phoneme_string = phoneme_string.replace("``", '"')
-        phoneme_string = phoneme_string.replace("''", '"')
+        phoneme_string = " ".join(ps).replace("``", '"').replace("''", '"')
 
         textcleaner = TextCleaner()
         tokens = textcleaner(phoneme_string)
+
+        if len(tokens) == 0:
+            logger.warning("Token list is empty after cleaning; returning silence.")
+            return np.zeros(0, dtype=np.float32), prev_s
+
         tokens.insert(0, 0)
         tokens = torch.LongTensor(tokens).to(self.device).unsqueeze(0)
 
         attempts = 0
-        MAX_SYNTH=int(config.MAX_SYNTH)
+        MAX_SYNTH = int(config.MAX_SYNTH)
+
         while attempts < int(config.MAX_SYNTH_ATTEMPTS):
             with torch.no_grad():
-                input_lengths = torch.LongTensor(
-                    [tokens.shape[-1]]).to(self.device)
+                input_lengths = torch.LongTensor([tokens.shape[-1]]).to(self.device)
                 text_mask = length_to_mask(input_lengths).to(self.device)
 
-                t_en = self.model.text_encoder(
-                    tokens, input_lengths, text_mask)
-                bert_dur = self.model.bert(
-                    tokens, attention_mask=(~text_mask).int())
+                t_en = self.model.text_encoder(tokens, input_lengths, text_mask)
+                bert_dur = self.model.bert(tokens, attention_mask=(~text_mask).int())
                 d_en = self.model.bert_encoder(bert_dur).transpose(-1, -2)
 
+                # ---- style diffusion, shape-safe ----
                 s_pred = self.sampler(
                     noise=torch.randn((1, 256)).unsqueeze(1).to(self.device),
                     embedding=bert_dur,
                     embedding_scale=embedding_scale,
-                    features=ref_s,  # reference from the same speaker as the embedding
+                    features=ref_s,
                     num_steps=diffusion_steps,
                 ).squeeze(1)
 
+                # enforce [1, 256]
+                if s_pred.dim() == 0:
+                    logger.warning("s_pred is 0-dim; replacing with zeros.")
+                    s_pred = torch.zeros((1, 256), device=self.device)
+                elif s_pred.dim() == 1:
+                    if s_pred.numel() == 256:
+                        s_pred = s_pred.unsqueeze(0)
+                    else:
+                        logger.warning(
+                            f"s_pred has unexpected length {s_pred.numel()}; padding/truncating to 256."
+                        )
+                        s_fixed = torch.zeros(256, device=self.device)
+                        n = min(256, s_pred.numel())
+                        s_fixed[:n] = s_pred[:n]
+                        s_pred = s_fixed.unsqueeze(0)
+                elif s_pred.dim() > 2:
+                    logger.warning(f"s_pred has dim {s_pred.dim()}; reshaping to [1, -1] and truncating.")
+                    s_pred = s_pred.view(1, -1)[:, :256]
+
                 if prev_s is not None:
-                    # convex combination of previous and current style
                     s_pred = t * prev_s + (1 - t) * s_pred
 
                 s = s_pred[:, 128:]
@@ -656,26 +660,37 @@ class StyleTTS2:
 
                 s_pred = torch.cat([ref, s], dim=-1)
 
-                d = self.model.predictor.text_encoder(
-                    d_en, s, input_lengths, text_mask)
+                d = self.model.predictor.text_encoder(d_en, s, input_lengths, text_mask)
 
                 x, _ = self.model.predictor.lstm(d)
                 duration = self.model.predictor.duration_proj(x)
 
                 duration = torch.sigmoid(duration).sum(axis=-1)
-                pred_dur = torch.round(duration.squeeze()).clamp(min=1)
 
-                pred_aln_trg = torch.zeros(
-                    input_lengths, int(pred_dur.sum().data))
+                # ---- duration: scalar-safe, 1D-safe ----
+                duration = duration.squeeze()
+                if duration.dim() == 0:
+                    duration = duration.view(1)
+
+                pred_dur = torch.round(duration).clamp(min=1)
+
+                total_frames = int(pred_dur.sum().item())
+                if total_frames <= 0:
+                    logger.warning("Total predicted duration <= 0; forcing 1 frame.")
+                    total_frames = 1
+
+                pred_aln_trg = torch.zeros(input_lengths, total_frames)
+
                 c_frame = 0
                 for i in range(pred_aln_trg.size(0)):
-                    pred_aln_trg[i, c_frame: c_frame +
-                                 int(pred_dur[i].data)] = 1
-                    c_frame += int(pred_dur[i].data)
+                    dur_i = int(pred_dur[i].item())
+                    if dur_i <= 0:
+                        dur_i = 1
+                    end = min(c_frame + dur_i, total_frames)
+                    pred_aln_trg[i, c_frame:end] = 1
+                    c_frame = end
 
-                # encode prosody
-                en = d.transpose(-1, -
-                                 2) @ pred_aln_trg.unsqueeze(0).to(self.device)
+                en = d.transpose(-1, -2) @ pred_aln_trg.unsqueeze(0).to(self.device)
                 if self.model_params.decoder.type == "hifigan":
                     asr_new = torch.zeros_like(en)
                     asr_new[:, :, 0] = en[:, :, 0]
@@ -691,30 +706,35 @@ class StyleTTS2:
                     asr_new[:, :, 1:] = asr[:, :, 0:-1]
                     asr = asr_new
 
-                out = self.model.decoder(asr, F0_pred, N_pred,
-                                         ref.squeeze().unsqueeze(0))
+                out = self.model.decoder(asr, F0_pred, N_pred, ref.squeeze().unsqueeze(0))
                 output = out.squeeze().cpu().numpy()[..., :-50]
 
                 try:
                     with np.errstate(over='raise', invalid='raise'):
-                       # synth_mean = np.mean(np.abs(output)) * 100
                         max_value = np.max(np.abs(output)) * 100
                 except FloatingPointError:
                     logger.error(
-                        "Overflow or invalid value detected during synth_mean calculation.")
-                    max_value = MAX_SYNTH  # to force retry
+                        "Overflow or invalid value detected during max_value calculation."
+                    )
+                    max_value = MAX_SYNTH  # force retry
 
                 if np.isnan(max_value):
                     logger.error(
-                        f"Segment produced NaN, memory usage is {psutil.virtual_memory().percent}%")
-                    max_value = MAX_SYNTH # to force retry
+                        f"Segment produced NaN, memory usage is {psutil.virtual_memory().percent}%"
+                    )
+                    max_value = MAX_SYNTH  # force retry
                 else:
                     logger.info(
-                        f"Segment max value is {max_value:.2f}, memory usage is {psutil.virtual_memory().percent}% for attempts {attempts+1}")
+                        f"Segment max value is {max_value:.2f}, memory usage is {psutil.virtual_memory().percent}% for attempts {attempts+1}"
+                    )
 
                 if max_value <= MAX_SYNTH:
                     return output, s_pred
+
                 logger.warning(
-                    f"Segment max value is too high (above {MAX_SYNTH}) or segment failed, retrying segment inference...")
+                    f"Segment max value is too high (above {MAX_SYNTH}) or segment failed, retrying segment inference..."
+                )
                 attempts += 1
+
+        logger.warning("Max attempts reached; returning last output and style.")
         return output, s_pred

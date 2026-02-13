@@ -1,5 +1,9 @@
 
-
+# Author: Guillaume HENON - 2025
+# gui.henon@gmail.com
+#
+# if you have a "styletts2 monotonic_align issue, install it using requirement file in StyleTTS folder
+# on top of the requirement files in root folder
 
 import config
 import utils
